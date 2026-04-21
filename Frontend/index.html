@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>GD Skill Points</title>
+    <link rel="stylesheet" href="auth.css">
+    <style>
+        body { margin: 0; min-height: 100vh; background: radial-gradient(circle at top, #2b0000, #070000 60%, #000000); color: white; font-family: Arial, sans-serif; text-align: center; }
+        .admin-corner { position: fixed; top: 18px; left: 18px; z-index: 20; }
+        .admin-link { display: none; padding: 10px 14px; background: #ff6666; border: 1px solid #ff8c8c; border-radius: 8px; color: white; text-decoration: none; font-weight: bold; }
+        .hero { width: 90%; max-width: 850px; margin: 60px auto; padding: 40px 28px; background: rgba(20, 0, 0, 0.84); border: 1px solid #ff3b3b; border-radius: 16px; box-shadow: 0 0 28px rgba(255, 59, 59, 0.2); }
+        h1 { margin-top: 0; font-size: 48px; color: #ff4d4d; text-shadow: 0 0 15px rgba(255, 0, 0, 0.6); }
+        .subtitle { max-width: 520px; margin: 0 auto 30px; font-size: 20px; line-height: 1.5; color: #ffd0d0; }
+        .links { display: flex; justify-content: center; flex-wrap: wrap; gap: 16px; margin-top: 28px; }
+        .links a { display: inline-block; min-width: 170px; padding: 14px 18px; background: #1b0909; border: 1px solid #ff4d4d; border-radius: 10px; color: #ff7a7a; font-size: 20px; font-weight: bold; text-decoration: none; transition: transform 0.2s, box-shadow 0.2s, color 0.2s; }
+        .links a:hover { color: white; transform: translateY(-3px); box-shadow: 0 0 16px rgba(255, 0, 0, 0.35); }
+        .small-text { margin-top: 24px; color: #ffb8b8; font-size: 15px; }
+        .menu-board-shell { width: min(94%, 1150px); margin: 0 auto 40px; display: none; }
+        .menu-board-shell.open { display: block; }
+        .menu-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 18px; }
+        .menu-box { aspect-ratio: 1 / 1; width: 100%; padding: 20px 16px; background: rgba(255, 255, 255, 0.04); border: 1px solid rgba(255, 77, 77, 0.28); border-left: 5px solid #ff4d4d; border-radius: 12px; box-sizing: border-box; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; color: #ffe1e1; line-height: 1.5; box-shadow: 0 0 22px rgba(255, 77, 77, 0.08); }
+        .menu-box-title { font-size: 22px; font-weight: bold; color: #fff3f3; margin-bottom: 8px; }
+        .menu-box-description { font-size: 16px; color: #ffd4d4; }
+        @media (max-width: 900px) { .menu-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+        @media (max-width: 600px) { .admin-corner { position: static; text-align: left; padding: 18px 18px 0; } .hero { margin: 24px auto; padding: 28px 18px; } h1 { font-size: 34px; } .subtitle { font-size: 18px; } .links a { width: 100%; } .menu-grid { grid-template-columns: 1fr; } }
+    </style>
+</head>
+<body>
+    <div class="admin-corner">
+        <a class="admin-link" id="adminPageLink" href="admin.html">Admin Page</a>
+    </div>
+
+    <div class="auth-top-right">
+        <button class="auth-button" id="loginButton" onclick="openLoginPopup()">Log In</button>
+        <div class="auth-info" id="loginInfo">
+            <div class="auth-name" id="loginName">Bab9104</div>
+            <div class="auth-role" id="loginRole">Admin</div>
+            <button class="auth-button" onclick="openAccountPopup()">Log Out</button>
+        </div>
+    </div>
+
+    <div class="auth-overlay" id="loginOverlay">
+        <div class="auth-popup">
+            <div class="auth-close-row">
+                <button class="auth-close-button" onclick="closeLoginPopup()">X</button>
+            </div>
+            <h2>Log In</h2>
+            <p class="auth-popup-text">Use the admin login for now. You can change it later.</p>
+            <div class="auth-field">
+                <label for="username">Username</label>
+                <input id="username" type="text" placeholder="Username">
+            </div>
+            <div class="auth-field">
+                <label for="password">Password</label>
+                <input id="password" type="password" placeholder="Password">
+            </div>
+            <button class="auth-button auth-full" onclick="submitLogin()">Submit</button>
+            <div class="auth-error" id="errorText">Wrong username or password.</div>
+        </div>
+    </div>
+
+    <div class="auth-overlay" id="accountOverlay">
+        <div class="auth-popup">
+            <div class="auth-close-row">
+                <button class="auth-close-button" onclick="closeAccountPopup()">X</button>
+            </div>
+            <h2>Account</h2>
+            <div class="auth-panel-top">
+                <div class="auth-name" id="panelName">Bab9104</div>
+                <div class="auth-role" id="panelRole">Admin</div>
+            </div>
+            <p class="auth-popup-text">This can hold more account buttons later. For now, the button below logs you out.</p>
+            <button class="auth-panel-button auth-full" onclick="logOut()">Log Out</button>
+        </div>
+    </div>
+
+    <div class="hero">
+        <h1>Geometry Dash Skill Points</h1>
+
+        <p class="subtitle">
+            Join challenges, earn points and ranks, and compete in Geometry Dash events created by the community.
+        </p>
+
+        <div class="links">
+            <a href="leaderboard.html">Leaderboard</a>
+            <a href="challenges.html">Challenges</a>
+        </div>
+
+        <p class="small-text">
+            A Geometry Dash hub for community challenges, leaderboards, trading rewards, and skill-based ranking progression.
+        </p>
+    </div>
+
+    <div class="menu-board-shell" id="menuBoardShell">
+        <div class="menu-grid" id="menuGrid"></div>
+    </div>
+
+    <script>
+        function getHomeMenuBoxes() {
+            return JSON.parse(localStorage.getItem("gdHomeMenuBoxes")) || [];
+        }
+
+        function renderHomeMenuBoxes() {
+            const menuBoardShell = document.getElementById("menuBoardShell");
+            const menuGrid = document.getElementById("menuGrid");
+            const items = getHomeMenuBoxes();
+
+            menuGrid.innerHTML = "";
+            menuBoardShell.classList.toggle("open", items.length > 0);
+
+            items.forEach((item) => {
+                const box = document.createElement("div");
+                const title = document.createElement("div");
+                const description = document.createElement("div");
+
+                box.className = "menu-box";
+                title.className = "menu-box-title";
+                description.className = "menu-box-description";
+                title.textContent = item.title || item.text || "";
+                description.textContent = item.description || "";
+                box.appendChild(title);
+                if (description.textContent) {
+                    box.appendChild(description);
+                }
+                menuGrid.appendChild(box);
+            });
+        }
+
+        function updatePageForAuth() {
+            document.getElementById("adminPageLink").style.display = isAdminLoggedIn() ? "inline-block" : "none";
+            renderHomeMenuBoxes();
+        }
+
+        renderHomeMenuBoxes();
+    </script>
+    <script src="auth.js"></script>
+</body>
+</html>

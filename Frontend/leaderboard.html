@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Leaderboard - GD Skill Points</title>
+    <link rel="stylesheet" href="auth.css">
+    <style>
+        body { margin: 0; min-height: 100vh; background: radial-gradient(circle at top, #2b0000, #090000 65%, #000000); color: white; font-family: Arial, sans-serif; text-align: center; }
+        .panel { width: min(92%, 900px); margin: 40px auto; padding: 28px 22px; background: rgba(24, 3, 3, 0.92); border: 1px solid #ff4d4d; border-radius: 14px; box-shadow: 0 0 24px rgba(255, 77, 77, 0.2); }
+        h1 { margin-top: 0; color: #ff6666; text-shadow: 0 0 10px rgba(255, 77, 77, 0.45); }
+        .top-bar { display: flex; justify-content: center; gap: 12px; flex-wrap: wrap; margin-bottom: 18px; }
+        button,a.button-link { border: none; border-radius: 8px; padding: 10px 16px; font-weight: bold; cursor: pointer; text-decoration: none; font-size: 15px; }
+        .danger { background: #c91616; color: white; }
+        .home-link { background: #ff6666; color: white; }
+        #list { margin-top: 18px; }
+        .score-card { background: #180808; margin: 12px auto; width: min(100%, 560px); border-left: 5px solid #ff4d4d; border-radius: 10px; box-sizing: border-box; overflow: hidden; }
+        .score-main { display: flex; justify-content: space-between; align-items: center; gap: 12px; text-align: left; padding: 16px; }
+        .score-text { font-size: 18px; word-break: break-word; }
+        .score-actions { display: flex; align-items: center; gap: 10px; }
+        .empty { color: #ffb3b3; margin-top: 30px; }
+        .delete-one { background: #ff3b3b; color: white; min-width: 42px; }
+        @media (max-width: 560px) { .panel { margin: 20px auto; padding: 22px 14px; } .score-main { flex-direction: column; align-items: stretch; } .score-actions { justify-content: space-between; } }
+    </style>
+</head>
+<body>
+    <div class="auth-top-right"><button class="auth-button" id="loginButton" onclick="openLoginPopup()">Log In</button><div class="auth-info" id="loginInfo"><div class="auth-name" id="loginName">Bab9104</div><div class="auth-role" id="loginRole">Admin</div><button class="auth-button" onclick="openAccountPopup()">Log Out</button></div></div>
+    <div class="auth-overlay" id="loginOverlay"><div class="auth-popup"><div class="auth-close-row"><button class="auth-close-button" onclick="closeLoginPopup()">X</button></div><h2>Log In</h2><p class="auth-popup-text">Use the admin login for now.</p><div class="auth-field"><label for="username">Username</label><input id="username" type="text" placeholder="Username"></div><div class="auth-field"><label for="password">Password</label><input id="password" type="password" placeholder="Password"></div><button class="auth-button auth-full" onclick="submitLogin()">Submit</button><div class="auth-error" id="errorText">Wrong username or password.</div></div></div>
+    <div class="auth-overlay" id="accountOverlay"><div class="auth-popup"><div class="auth-close-row"><button class="auth-close-button" onclick="closeAccountPopup()">X</button></div><h2>Account</h2><div class="auth-panel-top"><div class="auth-name" id="panelName">Bab9104</div><div class="auth-role" id="panelRole">Admin</div></div><p class="auth-popup-text">This can hold more account buttons later. For now, the button below logs you out.</p><button class="auth-panel-button auth-full" onclick="logOut()">Log Out</button></div></div>
+
+    <div class="panel"><h1>Leaderboard</h1><div class="top-bar"><a class="button-link home-link" href="index.html">Back to Home</a><button class="danger" id="deleteAllButton" onclick="deleteAll()">Delete All Scores</button></div><div id="list"></div></div>
+
+    <script>
+        function leaderboardAdminEnabled() {
+            return localStorage.getItem("gdLoggedIn") === "true" && localStorage.getItem("gdUsername") === "Bab9104";
+        }
+        const list = document.getElementById("list");
+        const deleteAllButton = document.getElementById("deleteAllButton");
+        function getLeaderboardAccounts() {
+            return (JSON.parse(localStorage.getItem("gdAccounts")) || [])
+                .filter((account) => account && account.username)
+                .map((account) => ({
+                    username: account.username,
+                    points: Math.max(0, Math.floor(Number(account.points) || 0))
+                }));
+        }
+        function saveLeaderboardAccounts(items) {
+            localStorage.setItem("gdAccounts", JSON.stringify(items));
+        }
+        async function deleteScore(username) {
+            if (!leaderboardAdminEnabled()) return;
+            const accounts = JSON.parse(localStorage.getItem("gdAccounts")) || [];
+            const updatedAccounts = accounts.map((account) => {
+                if (account.username !== username) return account;
+                return { ...account, points: 0 };
+            });
+            saveLeaderboardAccounts(updatedAccounts);
+            render();
+        }
+        async function deleteAll() {
+            if (!leaderboardAdminEnabled()) return;
+            if (!confirm("Reset every player's points to 0?")) return;
+            const accounts = JSON.parse(localStorage.getItem("gdAccounts")) || [];
+            const updatedAccounts = accounts.map((account) => ({ ...account, points: 0 }));
+            saveLeaderboardAccounts(updatedAccounts);
+            render();
+        }
+        async function render() {
+            list.innerHTML = "";
+            deleteAllButton.style.display = leaderboardAdminEnabled() ? "inline-block" : "none";
+
+            const sortedScores = getLeaderboardAccounts().sort((a, b) => b.points - a.points);
+            if (sortedScores.length === 0) { list.innerHTML = '<p class="empty">No scores yet.</p>'; return; }
+
+            sortedScores.forEach((entry, index) => {
+                const card = document.createElement("div");
+                const main = document.createElement("div");
+                const info = document.createElement("div");
+                const scoreText = document.createElement("div");
+                const actions = document.createElement("div");
+
+                card.className = "score-card";
+                main.className = "score-main";
+                info.className = "score-info";
+                scoreText.className = "score-text";
+                actions.className = "score-actions";
+
+                scoreText.textContent = `${index + 1}. ${entry.username} - ${entry.points} pts`;
+                info.appendChild(scoreText);
+
+                if (leaderboardAdminEnabled()) {
+                    const deleteButton = document.createElement("button");
+                    deleteButton.className = "delete-one";
+                    deleteButton.textContent = "X";
+                    deleteButton.onclick = async (event) => {
+                        event.stopPropagation();
+                        await deleteScore(entry.username);
+                    };
+                    actions.appendChild(deleteButton);
+                }
+
+                main.appendChild(info);
+                main.appendChild(actions);
+                card.appendChild(main);
+                list.appendChild(card);
+            });
+        }
+        function updatePageForAuth() { render(); }
+        render();
+
+async function loadLeaderboard() {
+    try {
+        const res = await fetch("http://localhost:3000/api/leaderboard");
+        const data = await res.json();
+
+        const container = document.getElementById("leaderboard");
+        container.innerHTML = "";
+
+        data.leaderboard.forEach((user, index) => {
+            const div = document.createElement("div");
+
+            div.innerHTML = `
+                <strong>#${index + 1} ${user.username}</strong>
+                — ${user.points} points
+            `;
+
+            container.appendChild(div);
+        });
+
+    } catch (err) {
+        console.error("Failed to load leaderboard:", err);
+    }
+}
+
+loadLeaderboard();
+
+    </script>
+    <script src="auth.js"></script>
+</body>
+</html>

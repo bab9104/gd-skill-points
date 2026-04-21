@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Challenges - GD Skill Points</title>
+    <link rel="stylesheet" href="auth.css">
+    <style>
+        body { margin: 0; min-height: 100vh; background: radial-gradient(circle at top, #2b0000, #070000 60%, #000000); color: white; font-family: Arial, sans-serif; }
+        .page { width: min(94%, 1150px); margin: 30px auto; padding: 28px; background: rgba(20, 0, 0, 0.88); border: 1px solid #ff3b3b; border-radius: 16px; box-shadow: 0 0 24px rgba(255, 59, 59, 0.2); box-sizing: border-box; }
+        .top-bar { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 18px; }
+        .top-link,.add-button,.form-button,.card-button { display: inline-block; background: #ff6666; color: white; padding: 10px 14px; text-decoration: none; font-weight: bold; border-radius: 8px; border: none; cursor: pointer; }
+        .cancel-button { background: #421414; }
+        .edit-button { background: #8f2d2d; }
+        .delete-button { background: #cf1d1d; }
+        h1 { margin: 8px 0 10px; text-align: center; color: #ff4d4d; text-shadow: 0 0 15px rgba(255,0,0,0.45); }
+        .intro { text-align: center; color: #ffd0d0; max-width: 700px; margin: 0 auto 24px; line-height: 1.6; }
+        .form-panel { display: none; margin-bottom: 22px; padding: 18px; background: rgba(255,255,255,0.04); border: 1px solid rgba(255,77,77,0.28); border-radius: 12px; }
+        .form-panel.open { display: block; }
+        .field { margin-bottom: 14px; }
+        .field label { display: block; margin-bottom: 6px; color: #ffd0d0; font-weight: bold; }
+        .field input,.field textarea { width: 100%; padding: 10px 12px; border: 1px solid #8a2b2b; border-radius: 8px; background: #140606; color: white; font: inherit; box-sizing: border-box; }
+        .field textarea { min-height: 90px; resize: vertical; }
+        .form-actions { display: flex; gap: 10px; flex-wrap: wrap; }
+        .board { height: 540px; overflow-y: auto; padding-right: 8px; }
+        .challenge-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 18px; }
+        .challenge-card { min-height: 200px; background: rgba(255,255,255,0.04); border-left: 5px solid #ff4d4d; border-radius: 12px; padding: 18px; box-sizing: border-box; display: flex; flex-direction: column; justify-content: space-between; gap: 14px; }
+        .challenge-card h2 { margin: 0 0 10px; color: #ffd1d1; font-size: 24px; }
+        .challenge-card p { margin: 0; color: #ffe1e1; line-height: 1.5; }
+        .card-actions { display: flex; gap: 10px; flex-wrap: wrap; }
+        .card-button { padding: 8px 12px; }
+        .empty { padding: 40px 16px; text-align: center; color: #ffb3b3; border: 1px dashed rgba(255,77,77,0.35); border-radius: 12px; }
+        @media (max-width: 900px) { .challenge-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+        @media (max-width: 640px) { .page { margin: 18px auto; padding: 18px; } .challenge-grid { grid-template-columns: 1fr; } .board { height: 420px; } }
+    </style>
+</head>
+<body>
+    <div class="auth-top-right"><button class="auth-button" id="loginButton" onclick="openLoginPopup()">Log In</button><div class="auth-info" id="loginInfo"><div class="auth-name" id="loginName">Bab9104</div><div class="auth-role" id="loginRole">Admin</div><button class="auth-button" onclick="openAccountPopup()">Log Out</button></div></div>
+    <div class="auth-overlay" id="loginOverlay"><div class="auth-popup"><div class="auth-close-row"><button class="auth-close-button" onclick="closeLoginPopup()">X</button></div><h2>Log In</h2><p class="auth-popup-text">Log in as Bab9104 to manage challenges.</p><div class="auth-field"><label for="username">Username</label><input id="username" type="text" placeholder="Username"></div><div class="auth-field"><label for="password">Password</label><input id="password" type="password" placeholder="Password"></div><button class="auth-button auth-full" onclick="submitLogin()">Submit</button><div class="auth-error" id="errorText">Wrong username or password.</div></div></div>
+    <div class="auth-overlay" id="accountOverlay"><div class="auth-popup"><div class="auth-close-row"><button class="auth-close-button" onclick="closeAccountPopup()">X</button></div><h2>Account</h2><div class="auth-panel-top"><div class="auth-name" id="panelName">Bab9104</div><div class="auth-role" id="panelRole">Admin</div></div><p class="auth-popup-text">This can hold more account buttons later. For now, the button below logs you out.</p><button class="auth-panel-button auth-full" onclick="logOut()">Log Out</button></div></div>
+
+        <div class="page">
+            <div class="top-bar"><a class="top-link" href="index.html">Back to Home</a><button class="add-button" id="addChallengeButton" onclick="startAddChallenge()">Add Challenge</button></div>
+        <h1>Challenges</h1>
+        <p class="intro">Play challenges to win points and rewards.</p>
+        <div class="form-panel" id="formPanel">
+            <h2 id="formTitle">New Challenge</h2>
+            <div class="field"><label for="challengeName">Challenge Name</label><input id="challengeName" type="text" placeholder="Type the challenge name"></div>
+            <div class="field"><label for="challengeDescription">Description</label><textarea id="challengeDescription" placeholder="Type what the player has to do"></textarea></div>
+            <div class="form-actions"><button class="form-button" id="saveButton" onclick="saveChallenge()">Save Challenge</button><button class="form-button cancel-button" onclick="closeForm()">Cancel</button></div>
+        </div>
+        <div class="board"><div class="challenge-grid" id="challengeGrid"></div></div>
+    </div>
+
+    <script>
+        const challengeGrid = document.getElementById("challengeGrid");
+        const formPanel = document.getElementById("formPanel");
+        const formTitle = document.getElementById("formTitle");
+        const saveButton = document.getElementById("saveButton");
+        const challengeName = document.getElementById("challengeName");
+        const challengeDescription = document.getElementById("challengeDescription");
+        const addChallengeButton = document.getElementById("addChallengeButton");
+        let editingIndex = null;
+        const defaultChallenges = [
+            { name: "Easy Rush", description: "Beat 10 easy levels in one playing session." },
+            { name: "Demon Climber", description: "Beat 2 easy demons and 1 medium demon." },
+            { name: "Wave Master", description: "Beat a level with a hard wave section or a wave-focused demon." },
+            { name: "Top Player Push", description: "Beat 1 extreme demon or finish a top 150 demonlist level." },
+            { name: "Consistency Test", description: "Beat 5 harder levels and 3 insane levels." },
+            { name: "Mini Demon Run", description: "Beat any 3 demons in one day." }
+        ];
+        let challenges = JSON.parse(localStorage.getItem("gdChallenges")) || defaultChallenges;
+        function saveChallenges() { localStorage.setItem("gdChallenges", JSON.stringify(challenges)); }
+        if (!localStorage.getItem("gdChallenges")) { saveChallenges(); }
+        function updatePageForAuth() {
+            const admin = isAdminLoggedIn();
+            addChallengeButton.style.display = admin ? "inline-block" : "none";
+            if (!admin) { formPanel.classList.remove("open"); }
+            renderChallenges();
+        }
+        function openForm() { if (!isAdminLoggedIn()) return; formPanel.classList.add("open"); }
+        function closeForm() { formPanel.classList.remove("open"); challengeName.value = ""; challengeDescription.value = ""; formTitle.innerText = "New Challenge"; saveButton.innerText = "Save Challenge"; editingIndex = null; }
+        function startAddChallenge() { closeForm(); openForm(); }
+        function renderChallenges() {
+            const admin = isAdminLoggedIn();
+            challengeGrid.innerHTML = "";
+            if (challenges.length === 0) { challengeGrid.innerHTML = '<div class="empty">No challenges yet.</div>'; return; }
+            challenges.forEach((challenge, index) => {
+                const card = document.createElement("div");
+                const content = document.createElement("div");
+                const title = document.createElement("h2");
+                const description = document.createElement("p");
+
+                card.className = "challenge-card";
+                title.textContent = challenge.name;
+                description.textContent = challenge.description;
+                content.appendChild(title);
+                content.appendChild(description);
+                card.appendChild(content);
+
+                if (admin) {
+                    const actions = document.createElement("div");
+                    const editButton = document.createElement("button");
+                    const deleteButton = document.createElement("button");
+
+                    actions.className = "card-actions";
+                    editButton.className = "card-button edit-button";
+                    deleteButton.className = "card-button delete-button";
+                    editButton.textContent = "Edit";
+                    deleteButton.textContent = "X";
+                    editButton.onclick = () => editChallenge(index);
+                    deleteButton.onclick = () => deleteChallenge(index);
+                    actions.appendChild(editButton);
+                    actions.appendChild(deleteButton);
+                    card.appendChild(actions);
+                }
+
+                challengeGrid.appendChild(card);
+            });
+        }
+        function saveChallenge() { if (!isAdminLoggedIn()) return; const name = challengeName.value.trim(); const description = challengeDescription.value.trim(); if (!name || !description) { alert("Type both a name and a description."); return; } if (editingIndex === null) { challenges.push({ name, description }); } else { challenges[editingIndex] = { name, description }; } saveChallenges(); closeForm(); renderChallenges(); }
+        function editChallenge(index) { if (!isAdminLoggedIn()) return; editingIndex = index; challengeName.value = challenges[index].name; challengeDescription.value = challenges[index].description; formTitle.innerText = "Edit Challenge"; saveButton.innerText = "Save Changes"; openForm(); }
+        function deleteChallenge(index) { if (!isAdminLoggedIn()) return; challenges.splice(index, 1); saveChallenges(); if (editingIndex === index) closeForm(); renderChallenges(); }
+        renderChallenges();
+    </script>
+    <script src="auth.js"></script>
+</body>
+</html>

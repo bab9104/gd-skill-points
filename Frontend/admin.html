@@ -1,0 +1,490 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Admin Page - GD Skill Points</title>
+    <link rel="stylesheet" href="auth.css">
+    <style>
+        body { margin: 0; min-height: 100vh; background: radial-gradient(circle at top, #2b0000, #070000 60%, #000000); color: white; font-family: Arial, sans-serif; }
+        .page { width: min(92%, 900px); margin: 40px auto; padding: 28px; background: rgba(20, 0, 0, 0.88); border: 1px solid #ff3b3b; border-radius: 16px; box-shadow: 0 0 24px rgba(255, 59, 59, 0.2); box-sizing: border-box; }
+        h1 { margin-top: 0; text-align: center; color: #ff4d4d; text-shadow: 0 0 15px rgba(255, 0, 0, 0.45); }
+        .intro { text-align: center; color: #ffd0d0; max-width: 620px; margin: 0 auto 24px; line-height: 1.6; }
+        .status-box { padding: 18px; background: rgba(255, 255, 255, 0.04); border-left: 5px solid #ff4d4d; border-radius: 12px; margin: 18px 0; }
+        .status-box strong { color: #ffd1d1; }
+        .top-link { display: inline-block; margin-bottom: 20px; background: #ff6666; color: white; padding: 10px 14px; text-decoration: none; font-weight: bold; border-radius: 8px; }
+        .admin-tabs { max-width: 700px; margin: 0 auto 22px; }
+        .admin-tabs.auth-mode-switch { grid-template-columns: repeat(3, 1fr); }
+        .admin-panel { display: none; }
+        .admin-panel.open { display: block; }
+        .queue-title { margin: 28px 0 14px; color: #ffb3b3; }
+        .section-title { margin: 28px 0 14px; color: #ffb3b3; }
+        .account-tools { margin-bottom: 16px; }
+        .account-search { width: 100%; padding: 11px 12px; border: 1px solid #8a2b2b; border-radius: 8px; background: #140606; color: white; font: inherit; box-sizing: border-box; }
+        .account-board { max-height: 420px; overflow-y: auto; padding-right: 8px; }
+        .queue-list { display: grid; gap: 16px; }
+        .account-list { display: grid; gap: 16px; }
+        .account-card { padding: 18px; background: rgba(255, 255, 255, 0.04); border-left: 5px solid #ff4d4d; border-radius: 12px; cursor: pointer; transition: border-color 0.2s, box-shadow 0.2s, background 0.2s; }
+        .account-card:hover { background: rgba(255, 255, 255, 0.06); box-shadow: 0 0 20px rgba(255, 77, 77, 0.12); }
+        .account-card.open { border-left-color: #ff9f9f; box-shadow: 0 0 24px rgba(255, 77, 77, 0.18); }
+        .account-head { display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 10px; }
+        .account-name { font-size: 24px; color: #ffd1d1; font-weight: bold; }
+        .account-role { color: #ff9f9f; font-weight: bold; }
+        .account-meta { color: #ffd0d0; line-height: 1.6; margin-bottom: 12px; }
+        .points-line { color: #fff3f3; font-weight: bold; margin-bottom: 12px; }
+        .account-points-panel { display: grid; gap: 10px; margin-top: 8px; }
+        .points-controls { display: flex; gap: 10px; flex-wrap: wrap; }
+        .points-input { width: 180px; max-width: 100%; padding: 11px 12px; border: 1px solid #8a2b2b; border-radius: 8px; background: #140606; color: white; font: inherit; box-sizing: border-box; }
+        .password-box { padding: 10px 12px; margin-bottom: 12px; background: rgba(0, 0, 0, 0.18); border-radius: 8px; color: #ffe1e1; }
+        .hidden-password { color: #ffbdbd; }
+        .submission-card { padding: 18px; background: rgba(255, 255, 255, 0.04); border-left: 5px solid #ff4d4d; border-radius: 12px; }
+        .submission-head { display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 12px; }
+        .submission-name { font-size: 24px; color: #ffd1d1; font-weight: bold; }
+        .submission-score { color: #ff9f9f; font-weight: bold; }
+        .submission-time { color: #ffbdbd; font-size: 14px; margin-bottom: 10px; }
+        .submission-note { color: #ffd0d0; margin-bottom: 12px; }
+        .details-list { display: grid; gap: 8px; margin-bottom: 16px; }
+        .detail-line { padding: 9px 12px; background: rgba(0, 0, 0, 0.18); border-radius: 8px; color: #ffe1e1; }
+        .submission-actions { display: flex; gap: 10px; flex-wrap: wrap; }
+        .action-button { border: none; border-radius: 8px; padding: 10px 14px; color: white; font-weight: bold; cursor: pointer; }
+        .approve-button { background: #2d8f45; }
+        .reject-button { background: #a32929; }
+        .empty-box { padding: 22px; background: rgba(255, 255, 255, 0.04); border: 1px dashed rgba(255, 77, 77, 0.28); border-radius: 12px; color: #ffbdbd; text-align: center; }
+        .home-tools { margin-bottom: 18px; }
+        .home-form { display: grid; gap: 12px; margin-bottom: 18px; }
+        .home-input { width: 100%; padding: 11px 12px; border: 1px solid #8a2b2b; border-radius: 8px; background: #140606; color: white; font: inherit; box-sizing: border-box; }
+        .home-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 18px; }
+        .home-card { aspect-ratio: 1 / 1; width: 100%; padding: 18px; background: rgba(255, 255, 255, 0.04); border-left: 5px solid #ff4d4d; border-radius: 12px; box-sizing: border-box; display: flex; flex-direction: column; justify-content: space-between; gap: 14px; }
+        .home-card-text { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; word-break: break-word; }
+        .home-card-title { color: #fff3f3; font-size: 22px; font-weight: bold; margin-bottom: 8px; }
+        .home-card-description { color: #ffd4d4; font-size: 16px; line-height: 1.5; }
+        @media (max-width: 900px) { .home-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+        @media (max-width: 640px) { .home-grid { grid-template-columns: 1fr; } }
+    </style>
+</head>
+<body>
+    <div class="auth-top-right"><button class="auth-button" id="loginButton" onclick="openLoginPopup()">Log In</button><div class="auth-info" id="loginInfo"><div class="auth-name" id="loginName">Bab9104</div><div class="auth-role" id="loginRole">Admin</div><button class="auth-button" onclick="openAccountPopup()">Log Out</button></div></div>
+    <div class="auth-overlay" id="loginOverlay"><div class="auth-popup"><div class="auth-close-row"><button class="auth-close-button" onclick="closeLoginPopup()">X</button></div><h2>Log In</h2><p class="auth-popup-text">Use the admin login for now.</p><div class="auth-field"><label for="username">Username</label><input id="username" type="text" placeholder="Username"></div><div class="auth-field"><label for="password">Password</label><input id="password" type="password" placeholder="Password"></div><button class="auth-button auth-full" onclick="submitLogin()">Submit</button><div class="auth-error" id="errorText">Wrong username or password.</div></div></div>
+    <div class="auth-overlay" id="accountOverlay"><div class="auth-popup"><div class="auth-close-row"><button class="auth-close-button" onclick="closeAccountPopup()">X</button></div><h2>Account</h2><div class="auth-panel-top"><div class="auth-name" id="panelName">Bab9104</div><div class="auth-role" id="panelRole">Admin</div></div><p class="auth-popup-text">This can hold more account buttons later. For now, the button below logs you out.</p><button class="auth-panel-button auth-full" onclick="logOut()">Log Out</button></div></div>
+
+    <div class="page">
+        <a class="top-link" href="index.html">Back to Home</a>
+        <h1>Admin Page</h1>
+        <p class="intro">Review submitted scores here before they go onto the leaderboard. If a submission looks realistic, you can approve it.</p>
+        <div class="status-box" id="adminStatusBox">
+            <strong>Status:</strong> Log in as Bab9104 to use admin access.
+        </div>
+        <div class="admin-tabs auth-mode-switch">
+            <button class="auth-mode-button active" id="queueTabButton" type="button" onclick="setAdminTab('queue')">Pending Scores</button>
+            <button class="auth-mode-button" id="accountsTabButton" type="button" onclick="setAdminTab('accounts')">Accounts</button>
+            <button class="auth-mode-button" id="homeTabButton" type="button" onclick="setAdminTab('home')">Main Menu</button>
+        </div>
+        <div class="admin-panel open" id="queuePanel">
+            <h2 class="queue-title">Pending Score Reviews</h2>
+            <div class="queue-list" id="queueList"></div>
+        </div>
+        <div class="admin-panel" id="accountsPanel">
+            <h2 class="section-title">Accounts</h2>
+            <div class="account-tools">
+                <input class="account-search" id="accountSearch" type="text" placeholder="Search accounts by name or role" oninput="renderAccounts()">
+            </div>
+            <div class="account-board">
+                <div class="account-list" id="accountList"></div>
+            </div>
+        </div>
+        <div class="admin-panel" id="homePanel">
+            <h2 class="section-title">Main Menu Boxes</h2>
+            <div class="home-tools">
+                <div class="home-form">
+                    <input class="home-input" id="homeBoxTitle" type="text" maxlength="50" placeholder="Box title">
+                    <input class="home-input" id="homeBoxDescription" type="text" maxlength="120" placeholder="Box description">
+                    <button class="action-button approve-button" type="button" id="addHomeBoxButton" onclick="addHomeBox()">Add Box</button>
+                </div>
+            </div>
+            <div class="home-grid" id="homeBoxList"></div>
+        </div>
+    </div>
+
+    <script>
+        const accountList = document.getElementById("accountList");
+        const accountSearch = document.getElementById("accountSearch");
+        const queueList = document.getElementById("queueList");
+        const queuePanel = document.getElementById("queuePanel");
+        const accountsPanel = document.getElementById("accountsPanel");
+        const homePanel = document.getElementById("homePanel");
+        const queueTabButton = document.getElementById("queueTabButton");
+        const accountsTabButton = document.getElementById("accountsTabButton");
+        const homeTabButton = document.getElementById("homeTabButton");
+        const homeBoxList = document.getElementById("homeBoxList");
+        const homeBoxTitle = document.getElementById("homeBoxTitle");
+        const homeBoxDescription = document.getElementById("homeBoxDescription");
+        let openAccountUsername = "";
+        let activeAdminTab = "queue";
+
+        function setAdminTab(tabName) {
+            activeAdminTab = tabName;
+            queuePanel.classList.toggle("open", tabName === "queue");
+            accountsPanel.classList.toggle("open", tabName === "accounts");
+            homePanel.classList.toggle("open", tabName === "home");
+            queueTabButton.classList.toggle("active", tabName === "queue");
+            accountsTabButton.classList.toggle("active", tabName === "accounts");
+            homeTabButton.classList.toggle("active", tabName === "home");
+        }
+
+        function getPendingScores() {
+            return JSON.parse(localStorage.getItem("pendingScores")) || [];
+        }
+
+        function savePendingScores(pendingScores) {
+            localStorage.setItem("pendingScores", JSON.stringify(pendingScores));
+        }
+
+        function getApprovedScores() {
+            return JSON.parse(localStorage.getItem("scores")) || [];
+        }
+
+        function getHomeMenuBoxes() {
+            return JSON.parse(localStorage.getItem("gdHomeMenuBoxes")) || [];
+        }
+
+        function saveHomeMenuBoxes(items) {
+            localStorage.setItem("gdHomeMenuBoxes", JSON.stringify(items));
+        }
+
+        async function renderAccounts() {
+            accountList.innerHTML = "";
+
+            if (!isAdminLoggedIn()) {
+                accountList.innerHTML = '<div class="empty-box">Log in as Bab9104 to view saved accounts.</div>';
+                return;
+            }
+
+            const accounts = await getAccounts();
+            const searchText = accountSearch.value.trim().toLowerCase();
+            const filteredAccounts = accounts.filter((account) => {
+                if (!searchText) return true;
+                return account.username.toLowerCase().includes(searchText) || String(account.role || "").toLowerCase().includes(searchText);
+            });
+
+            if (filteredAccounts.length === 0) {
+                accountList.innerHTML = `<div class="empty-box">${searchText ? "No matching accounts found." : "No saved accounts yet."}</div>`;
+                return;
+            }
+
+            filteredAccounts.forEach((account) => {
+                const isAdmin = account.role === ADMIN_ROLE;
+                const isCurrent = authLoggedInUsername() === account.username && isLoggedIn();
+                const card = document.createElement("div");
+                const head = document.createElement("div");
+                const name = document.createElement("div");
+                const role = document.createElement("div");
+                const meta = document.createElement("div");
+                const pointsLine = document.createElement("div");
+                const actions = document.createElement("div");
+
+                card.className = "account-card";
+                if (openAccountUsername === account.username) {
+                    card.classList.add("open");
+                }
+                head.className = "account-head";
+                name.className = "account-name";
+                role.className = "account-role";
+                meta.className = "account-meta";
+                pointsLine.className = "points-line";
+                actions.className = "submission-actions";
+
+                name.textContent = account.username;
+                role.textContent = account.role;
+                meta.innerHTML = `Created: ${escapeHtml(account.createdAt || "Unknown")}<br>Last Login: ${escapeHtml(account.lastLogin || "Never")}<br>Status: ${isCurrent ? "Currently logged in" : "Saved account"}`;
+                pointsLine.textContent = `Points: ${Number(account.points) || 0}`;
+                card.onclick = () => toggleAccountPanel(account.username);
+
+                head.appendChild(name);
+                head.appendChild(role);
+
+                if (!isAdmin) {
+                    const deleteButton = document.createElement("button");
+                    deleteButton.className = "action-button reject-button";
+                    deleteButton.textContent = "Delete Account";
+                    deleteButton.onclick = (event) => {
+                        event.stopPropagation();
+                        deleteAccount(account.username);
+                    };
+                    actions.appendChild(deleteButton);
+                }
+
+                card.appendChild(head);
+                card.appendChild(meta);
+                card.appendChild(pointsLine);
+                if (openAccountUsername === account.username) {
+                    const panel = document.createElement("div");
+                    const note = document.createElement("div");
+                    const controls = document.createElement("div");
+                    const input = document.createElement("input");
+                    const addButton = document.createElement("button");
+
+                    panel.className = "account-points-panel";
+                    note.className = "submission-note";
+                    controls.className = "points-controls";
+                    input.className = "points-input";
+                    addButton.className = "action-button approve-button";
+
+                    note.textContent = `Add points to ${account.username}`;
+                    input.type = "number";
+                    input.min = "1";
+                    input.step = "1";
+                    input.placeholder = "Add points";
+                    input.onclick = (event) => event.stopPropagation();
+                    addButton.textContent = "Add Points";
+                    addButton.onclick = (event) => {
+                        event.stopPropagation();
+                        addPointsToAccount(account.username, input.value);
+                    };
+
+                    controls.appendChild(input);
+                    controls.appendChild(addButton);
+                    panel.appendChild(note);
+                    panel.appendChild(controls);
+                    card.appendChild(panel);
+                }
+                card.appendChild(actions);
+                accountList.appendChild(card);
+            });
+        }
+
+        function toggleAccountPanel(username) {
+            openAccountUsername = openAccountUsername === username ? "" : username;
+            renderAccounts();
+        }
+
+        function renderHomeBoxes() {
+            homeBoxList.innerHTML = "";
+
+            if (!isAdminLoggedIn()) {
+                homeBoxList.innerHTML = '<div class="empty-box">Log in as Bab9104 to manage main menu boxes.</div>';
+                return;
+            }
+
+            const items = getHomeMenuBoxes();
+            if (items.length === 0) {
+                homeBoxList.innerHTML = '<div class="empty-box">No boxes yet.</div>';
+                return;
+            }
+
+            items.forEach((item, index) => {
+                const card = document.createElement("div");
+                const text = document.createElement("div");
+                const title = document.createElement("div");
+                const description = document.createElement("div");
+                const actions = document.createElement("div");
+                const deleteButton = document.createElement("button");
+
+                card.className = "home-card";
+                text.className = "home-card-text";
+                title.className = "home-card-title";
+                description.className = "home-card-description";
+                actions.className = "submission-actions";
+                deleteButton.className = "action-button reject-button";
+
+                title.textContent = item.title || item.text || "";
+                description.textContent = item.description || "";
+                text.appendChild(title);
+                if (description.textContent) {
+                    text.appendChild(description);
+                }
+                deleteButton.textContent = "Delete";
+                deleteButton.onclick = () => deleteHomeBox(index);
+
+                actions.appendChild(deleteButton);
+                card.appendChild(text);
+                card.appendChild(actions);
+                homeBoxList.appendChild(card);
+            });
+        }
+
+        async function deleteAccount(username) {
+            if (!isAdminLoggedIn()) return;
+            if (username === ADMIN_USERNAME) return;
+
+            const keptAccounts = (await getAccounts()).filter((account) => account.username !== username);
+            saveAccounts(keptAccounts);
+            if (openAccountUsername === username) {
+                openAccountUsername = "";
+            }
+            renderAccounts();
+        }
+
+        async function addPointsToAccount(username, value) {
+            if (!isAdminLoggedIn()) return;
+
+            const amount = Math.floor(Number(value));
+            if (!Number.isFinite(amount) || amount <= 0) {
+                alert("Type a point amount bigger than 0.");
+                return;
+            }
+
+            const accounts = await getAccounts();
+            const updatedAccounts = accounts.map((account) => {
+                if (account.username !== username) {
+                    return account;
+                }
+
+                return {
+                    ...account,
+                    points: (Number(account.points) || 0) + amount
+                };
+            });
+
+            saveAccounts(updatedAccounts);
+            renderAccounts();
+        }
+
+        function addHomeBox() {
+            if (!isAdminLoggedIn()) return;
+
+            const title = homeBoxTitle.value.trim();
+            const description = homeBoxDescription.value.trim();
+            if (!title) {
+                alert("Type a title for the box first.");
+                return;
+            }
+
+            const items = getHomeMenuBoxes();
+            items.push({ title, description });
+            saveHomeMenuBoxes(items);
+            homeBoxTitle.value = "";
+            homeBoxDescription.value = "";
+            renderHomeBoxes();
+        }
+
+        function deleteHomeBox(index) {
+            if (!isAdminLoggedIn()) return;
+
+            const items = getHomeMenuBoxes();
+            items.splice(index, 1);
+            saveHomeMenuBoxes(items);
+            renderHomeBoxes();
+        }
+
+        function renderQueue() {
+            const pendingScores = getPendingScores();
+            queueList.innerHTML = "";
+
+            if (!isAdminLoggedIn()) {
+                queueList.innerHTML = '<div class="empty-box">Log in as Bab9104 to review pending scores.</div>';
+                return;
+            }
+
+            if (pendingScores.length === 0) {
+                queueList.innerHTML = '<div class="empty-box">No pending submissions right now.</div>';
+                return;
+            }
+
+            pendingScores.forEach((entry, index) => {
+                const card = document.createElement("div");
+                const head = document.createElement("div");
+                const name = document.createElement("div");
+                const score = document.createElement("div");
+                const time = document.createElement("div");
+                const note = document.createElement("div");
+                const detailsList = document.createElement("div");
+                const actions = document.createElement("div");
+                const approveButton = document.createElement("button");
+                const rejectButton = document.createElement("button");
+
+                card.className = "submission-card";
+                head.className = "submission-head";
+                name.className = "submission-name";
+                score.className = "submission-score";
+                time.className = "submission-time";
+                note.className = "submission-note";
+                detailsList.className = "details-list";
+                actions.className = "submission-actions";
+                approveButton.className = "action-button approve-button";
+                rejectButton.className = "action-button reject-button";
+
+                name.textContent = entry.name;
+                score.textContent = `${entry.score} pts`;
+                time.textContent = `Submitted: ${entry.submittedAt || "Unknown time"}`;
+                note.textContent = "Check whether this score breakdown looks realistic before approving it.";
+                approveButton.textContent = "Approve";
+                rejectButton.textContent = "Reject";
+                approveButton.onclick = () => approveSubmission(index);
+                rejectButton.onclick = () => rejectSubmission(index);
+
+                if (entry.details && entry.details.length > 0) {
+                    entry.details.forEach((item) => {
+                        const line = document.createElement("div");
+                        line.className = "detail-line";
+                        line.textContent = `${item.amount} x ${item.name} = ${item.points} pts`;
+                        detailsList.appendChild(line);
+                    });
+                } else {
+                    const line = document.createElement("div");
+                    line.className = "detail-line";
+                    line.textContent = "No details saved.";
+                    detailsList.appendChild(line);
+                }
+
+                head.appendChild(name);
+                head.appendChild(score);
+                actions.appendChild(approveButton);
+                actions.appendChild(rejectButton);
+                card.appendChild(head);
+                card.appendChild(time);
+                card.appendChild(note);
+                card.appendChild(detailsList);
+                card.appendChild(actions);
+                queueList.appendChild(card);
+            });
+        }
+
+        function approveSubmission(index) {
+            if (!isAdminLoggedIn()) return;
+
+            const pendingScores = getPendingScores();
+            const approvedScores = getApprovedScores();
+            const selected = pendingScores[index];
+
+            if (!selected) return;
+
+            approvedScores.push({
+                name: selected.name,
+                score: selected.score,
+                details: selected.details || [],
+                submittedAt: selected.submittedAt || "Unknown time"
+            });
+
+            pendingScores.splice(index, 1);
+            localStorage.setItem("scores", JSON.stringify(approvedScores));
+            savePendingScores(pendingScores);
+            renderQueue();
+        }
+
+        function rejectSubmission(index) {
+            if (!isAdminLoggedIn()) return;
+
+            const pendingScores = getPendingScores();
+            pendingScores.splice(index, 1);
+            savePendingScores(pendingScores);
+            renderQueue();
+        }
+
+        async function updatePageForAuth() {
+            const statusBox = document.getElementById("adminStatusBox");
+            if (isAdminLoggedIn()) {
+                statusBox.innerHTML = "<strong>Status:</strong> Admin access enabled.";
+            } else {
+                statusBox.innerHTML = "<strong>Status:</strong> Log in as Bab9104 to use admin access.";
+                accountSearch.value = "";
+                openAccountUsername = "";
+                homeBoxTitle.value = "";
+                homeBoxDescription.value = "";
+            }
+            await renderAccounts();
+            renderQueue();
+            renderHomeBoxes();
+            setAdminTab(activeAdminTab);
+        }
+    </script>
+    <script src="auth.js"></script>
+</body>
+</html>
