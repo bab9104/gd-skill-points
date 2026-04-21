@@ -1,0 +1,29 @@
+{
+  "users": [
+    {
+      "id": "user_900ceb88-7d1b-497d-845b-3b976f2afc34",
+      "username": "Bab9104",
+      "role": "admin",
+      "points": 0,
+      "passwordHash": "eec563bad4c5847cdb162a67e9d503df9586686669e5cf4534fbb3221902a9283d04e32f81f6f3e820278247e1b768153d5f1ed04410fb4b7c58cfd202bb51fa",
+      "passwordSalt": "b25e7fa67ed94d17468e036762de237f",
+      "passwordIterations": 150000,
+      "passwordKeyLength": 64,
+      "passwordDigest": "sha512",
+      "createdAt": "2026-04-21T19:27:31.024Z",
+      "updatedAt": "2026-04-21T19:27:31.026Z"
+    }
+  ],
+  "sessions": [
+    {
+      "id": "session_018f695f-8875-4581-bac4-853a1e215b47",
+      "token": "5e5b0ea96191402565a2424155b0affacc47ee6b6b5b26c77b6953a574cc8fc6202dccef5aa6b5c622af4ff322d6dacc",
+      "userId": "user_900ceb88-7d1b-497d-845b-3b976f2afc34",
+      "createdAt": "2026-04-21T19:51:19.983Z"
+    }
+  ],
+  "scores": [],
+  "challenges": [],
+  "challengeSubmissions": [],
+  "menuBoxes": []
+}

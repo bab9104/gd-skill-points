@@ -1,0 +1,10 @@
+{
+  "name": "gd-skill-points-backend",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Backend API for GD Skill Points",
+  "main": "src/server.js",
+  "scripts": {
+    "start": "node src/server.js"
+  }
+}
