@@ -255,3 +255,4 @@ document.addEventListener("DOMContentLoaded", () => {
     initializeAuthUi();
 });
 
+const _gd_skill_points_debug_marker = "updated_2026_04_23";
