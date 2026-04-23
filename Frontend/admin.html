@@ -12,22 +12,12 @@
         .status-box strong { color: #ffd1d1; }
         .top-link { display: inline-block; margin-bottom: 20px; background: #ff6666; color: white; padding: 10px 14px; text-decoration: none; font-weight: bold; border-radius: 8px; }
         .admin-tabs { max-width: 700px; margin: 0 auto 22px; }
-        .admin-tabs.auth-mode-switch { grid-template-columns: repeat(3, 1fr); }
+        .admin-tabs.auth-mode-switch { grid-template-columns: repeat(2, 1fr); }
         .admin-panel { display: none; }
         .admin-panel.open { display: block; }
         .queue-title { margin: 28px 0 14px; color: #ffb3b3; }
         .section-title { margin: 28px 0 14px; color: #ffb3b3; }
-        .account-tools { margin-bottom: 16px; }
-        .account-search { width: 100%; padding: 11px 12px; border: 1px solid #8a2b2b; border-radius: 8px; background: #140606; color: white; font: inherit; box-sizing: border-box; }
-        .account-board { max-height: 420px; overflow-y: auto; padding-right: 8px; }
         .queue-list { display: grid; gap: 16px; }
-        .account-list { display: grid; gap: 16px; }
-        .account-card { padding: 18px; background: rgba(255, 255, 255, 0.04); border-left: 5px solid #ff4d4d; border-radius: 12px; transition: border-color 0.2s, box-shadow 0.2s, background 0.2s; }
-        .account-card:hover { background: rgba(255, 255, 255, 0.06); box-shadow: 0 0 20px rgba(255, 77, 77, 0.12); }
-        .account-head { display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 10px; }
-        .account-name { font-size: 24px; color: #ffd1d1; font-weight: bold; }
-        .account-role { color: #ff9f9f; font-weight: bold; }
-        .account-meta { color: #ffd0d0; line-height: 1.6; margin-bottom: 12px; }
         .submission-card { padding: 18px; background: rgba(255, 255, 255, 0.04); border-left: 5px solid #ff4d4d; border-radius: 12px; }
         .submission-head { display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 12px; }
         .submission-name { font-size: 24px; color: #ffd1d1; font-weight: bold; }
@@ -68,21 +58,11 @@
         </div>
         <div class="admin-tabs auth-mode-switch">
             <button class="auth-mode-button active" id="queueTabButton" type="button" onclick="setAdminTab('queue')">Pending Scores</button>
-            <button class="auth-mode-button" id="accountsTabButton" type="button" onclick="setAdminTab('accounts')">Accounts</button>
             <button class="auth-mode-button" id="homeTabButton" type="button" onclick="setAdminTab('home')">Main Menu</button>
         </div>
         <div class="admin-panel open" id="queuePanel">
             <h2 class="queue-title">Pending Score Reviews</h2>
             <div class="queue-list" id="queueList"></div>
-        </div>
-        <div class="admin-panel" id="accountsPanel">
-            <h2 class="section-title">Accounts</h2>
-            <div class="account-tools">
-                <input class="account-search" id="accountSearch" type="text" placeholder="Search accounts by name or role" oninput="renderAccounts()">
-            </div>
-            <div class="account-board">
-                <div class="account-list" id="accountList"></div>
-            </div>
         </div>
         <div class="admin-panel" id="homePanel">
             <h2 class="section-title">Main Menu Boxes</h2>
@@ -98,14 +78,10 @@
     </div>
 
     <script>
-        const accountList = document.getElementById("accountList");
-        const accountSearch = document.getElementById("accountSearch");
         const queueList = document.getElementById("queueList");
         const queuePanel = document.getElementById("queuePanel");
-        const accountsPanel = document.getElementById("accountsPanel");
         const homePanel = document.getElementById("homePanel");
         const queueTabButton = document.getElementById("queueTabButton");
-        const accountsTabButton = document.getElementById("accountsTabButton");
         const homeTabButton = document.getElementById("homeTabButton");
         const homeBoxList = document.getElementById("homeBoxList");
         const homeBoxTitle = document.getElementById("homeBoxTitle");
@@ -115,10 +91,8 @@
         function setAdminTab(tabName) {
             activeAdminTab = tabName;
             queuePanel.classList.toggle("open", tabName === "queue");
-            accountsPanel.classList.toggle("open", tabName === "accounts");
             homePanel.classList.toggle("open", tabName === "home");
             queueTabButton.classList.toggle("active", tabName === "queue");
-            accountsTabButton.classList.toggle("active", tabName === "accounts");
             homeTabButton.classList.toggle("active", tabName === "home");
         }
 
@@ -132,65 +106,6 @@
 
         function getApprovedScores() {
             return JSON.parse(localStorage.getItem("scores")) || [];
-        }
-
-        async function renderAccounts() {
-            accountList.innerHTML = "";
-
-            if (!isAdminLoggedIn()) {
-                accountList.innerHTML = '<div class="empty-box">Log in with an admin account to view Supabase accounts.</div>';
-                return;
-            }
-
-            let accounts = [];
-            try {
-                if (!window.gdAppState || typeof gdAppState.getSupabaseAccounts !== "function") {
-                    throw new Error("Supabase account loading is not available on this page.");
-                }
-
-                accounts = await gdAppState.getSupabaseAccounts();
-            } catch (error) {
-                console.error("Failed to load Supabase accounts:", error);
-                accountList.innerHTML = '<div class="empty-box">Could not load Supabase accounts right now.</div>';
-                return;
-            }
-
-            const searchText = accountSearch.value.trim().toLowerCase();
-            const filteredAccounts = accounts.filter((account) => {
-                if (!searchText) return true;
-                return account.username.toLowerCase().includes(searchText)
-                    || account.email.toLowerCase().includes(searchText)
-                    || String(account.role || "").toLowerCase().includes(searchText);
-            });
-
-            if (filteredAccounts.length === 0) {
-                accountList.innerHTML = `<div class="empty-box">${searchText ? "No matching Supabase accounts found." : "No Supabase accounts yet."}</div>`;
-                return;
-            }
-
-            filteredAccounts.forEach((account) => {
-                const card = document.createElement("div");
-                const head = document.createElement("div");
-                const name = document.createElement("div");
-                const role = document.createElement("div");
-                const meta = document.createElement("div");
-
-                card.className = "account-card";
-                head.className = "account-head";
-                name.className = "account-name";
-                role.className = "account-role";
-                meta.className = "account-meta";
-
-                name.textContent = account.username;
-                role.textContent = account.role;
-                meta.innerHTML = `Email: ${escapeHtml(account.email || "Unknown")}<br>Created: ${escapeHtml(account.createdAt || "Unknown")}<br>Last Login: ${escapeHtml(account.lastLogin || "Never")}`;
-
-                head.appendChild(name);
-                head.appendChild(role);
-                card.appendChild(head);
-                card.appendChild(meta);
-                accountList.appendChild(card);
-            });
         }
 
         function renderHomeBoxes() {
@@ -389,11 +304,9 @@
                 statusBox.innerHTML = "<strong>Status:</strong> Admin access enabled.";
             } else {
                 statusBox.innerHTML = "<strong>Status:</strong> Log in with an admin account to use admin access.";
-                accountSearch.value = "";
                 homeBoxTitle.value = "";
                 homeBoxDescription.value = "";
             }
-            await renderAccounts();
             renderQueue();
             renderHomeBoxes();
             setAdminTab(activeAdminTab);
@@ -401,7 +314,6 @@
 
         document.addEventListener("DOMContentLoaded", async () => {
             if (window.gdAppState) {
-                gdAppState.onChange(["accounts"], () => { renderAccounts(); });
                 gdAppState.onChange(["pendingScores"], () => { renderQueue(); });
                 gdAppState.onChange(["homeMenuBoxes"], () => { renderHomeBoxes(); });
             }

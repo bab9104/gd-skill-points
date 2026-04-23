@@ -234,19 +234,6 @@ function normalizeAccountProfile(account) {
     };
 }
 
-function formatAccountTimestamp(value) {
-    if (!value) {
-        return "Never";
-    }
-
-    const date = new Date(value);
-    if (Number.isNaN(date.getTime())) {
-        return String(value);
-    }
-
-    return date.toLocaleString();
-}
-
 async function getAccounts() {
     return readStoredArray(GD_STORAGE_KEYS.accounts)
         .map(normalizeAccountProfile)
@@ -259,38 +246,6 @@ function saveAccounts(accounts, options = {}) {
         : [];
 
     writeStoredArray(GD_STORAGE_KEYS.accounts, normalizedAccounts, options);
-}
-
-async function getSupabaseAccounts() {
-    const supabaseClient = getSupabaseClient();
-    if (!supabaseClient) {
-        throw new Error("Supabase is not available on this page.");
-    }
-
-    const user = getCurrentUser();
-    if (!user) {
-        return [];
-    }
-
-    const { data, error } = await supabaseClient.rpc("admin_list_accounts");
-    if (error) {
-        throw error;
-    }
-
-    return Array.isArray(data)
-        ? data.map((account) => ({
-            id: String(account && account.user_id || ""),
-            email: String(account && account.email || ""),
-            username: String(
-                (account && account.username)
-                || account && account.email
-                || ""
-            ).trim(),
-            role: String(account && account.role || USER_ROLE).toLowerCase() === ADMIN_ROLE ? ADMIN_ROLE : USER_ROLE,
-            createdAt: formatAccountTimestamp(account && account.created_at),
-            lastLogin: formatAccountTimestamp(account && account.last_sign_in_at)
-        })).filter((account) => account.id && account.username)
-        : [];
 }
 
 function getPendingScores() {
@@ -574,7 +529,6 @@ const gdAppState = {
     keys: GD_STORAGE_KEYS,
     onChange,
     getAccounts,
-    getSupabaseAccounts,
     saveAccounts,
     getPendingScores,
     savePendingScores,
