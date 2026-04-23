@@ -484,6 +484,11 @@
             renderHomeBoxes();
             setAdminTab(activeAdminTab);
         }
+
+document.addEventListener("DOMContentLoaded", async () => {
+    await updatePageForAuth();
+});
+
     </script>
     <script src="auth.js"></script>
 </body>

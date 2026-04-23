@@ -24,6 +24,13 @@
         @media (max-width: 600px) { .admin-corner { position: static; text-align: left; padding: 18px 18px 0; } .hero { margin: 24px auto; padding: 28px 18px; } h1 { font-size: 34px; } .subtitle { font-size: 18px; } .links a { width: 100%; } .menu-grid { grid-template-columns: 1fr; } }
     </style>
 </head>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js"></script>
+<script>
+const supabaseClient = supabase.createClient(
+  "https://juezglucqtenahnhsvri.supabase.co",
+  "sb_publishable_wvpNjf_yBYQyycCxFyGC3g_oOlXUytP"
+);
+</script>
 <body>
     <div class="admin-corner">
         <a class="admin-link" id="adminPageLink" href="admin.html">Admin Page</a>
@@ -126,11 +133,15 @@
         }
 
         function updatePageForAuth() {
-            document.getElementById("adminPageLink").style.display = isAdminLoggedIn() ? "inline-block" : "none";
-            renderHomeMenuBoxes();
-        }
+    renderHomeMenuBoxes();
+}
 
         renderHomeMenuBoxes();
+
+document.addEventListener("DOMContentLoaded", () => {
+    renderHomeMenuBoxes();
+});
+
     </script>
     <script src="auth.js"></script>
 </body>

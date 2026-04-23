@@ -7,10 +7,6 @@ let authMode = "login";
 // Front-end only note:
 // - This project uses localStorage (no server), so this improves storage (no plain-text),
 //   but it is not equivalent to real server-side password security.
-const DEFAULT_ADMIN_PASSWORD = "BabHtmlfileLol124";
-const PBKDF2_ITERATIONS = 150000;
-const PBKDF2_HASH = "SHA-256";
-const PASSWORD_HASH_BITS = 256;
 const AUTH_TEXT_LIMIT = 35;
 
 function escapeHtml(value) {
@@ -20,157 +16,6 @@ function escapeHtml(value) {
         .replace(/>/g, "&gt;")
         .replace(/"/g, "&quot;")
         .replace(/'/g, "&#39;");
-}
-
-function base64FromBytes(bytes) {
-    let binary = "";
-    const chunkSize = 0x8000;
-    for (let i = 0; i < bytes.length; i += chunkSize) {
-        binary += String.fromCharCode(...bytes.subarray(i, i + chunkSize));
-    }
-    return btoa(binary);
-}
-
-function bytesFromBase64(base64) {
-    const binary = atob(base64);
-    const bytes = new Uint8Array(binary.length);
-    for (let i = 0; i < binary.length; i++) {
-        bytes[i] = binary.charCodeAt(i);
-    }
-    return bytes;
-}
-
-function randomSaltBase64(byteLength = 16) {
-    const bytes = new Uint8Array(byteLength);
-    crypto.getRandomValues(bytes);
-    return base64FromBytes(bytes);
-}
-
-async function hashPassword(password, saltBase64) {
-    const encoder = new TextEncoder();
-    const passwordBytes = encoder.encode(password);
-    const saltBytes = bytesFromBase64(saltBase64);
-
-    const keyMaterial = await crypto.subtle.importKey(
-        "raw",
-        passwordBytes,
-        "PBKDF2",
-        false,
-        ["deriveBits"]
-    );
-
-    const derivedBits = await crypto.subtle.deriveBits(
-        {
-            name: "PBKDF2",
-            salt: saltBytes,
-            iterations: PBKDF2_ITERATIONS,
-            hash: PBKDF2_HASH
-        },
-        keyMaterial,
-        PASSWORD_HASH_BITS
-    );
-
-    return base64FromBytes(new Uint8Array(derivedBits));
-}
-
-async function migrateAccountPasswords(accounts) {
-    let changed = false;
-
-    for (const account of accounts) {
-        if (!account || typeof account.username !== "string") {
-            continue;
-        }
-
-        const isAdmin = account.username === ADMIN_USERNAME;
-        if (isAdmin) {
-            account.role = ADMIN_ROLE;
-            account.createdAt = account.createdAt || "Built-in admin account";
-            account.lastLogin = account.lastLogin || "Never";
-        } else {
-            account.role = account.role || PLAYER_ROLE;
-            account.createdAt = account.createdAt || "Unknown";
-            account.lastLogin = account.lastLogin || "Never";
-        }
-
-        const normalizedPoints = Number(account.points);
-        if (!Number.isFinite(normalizedPoints) || normalizedPoints < 0) {
-            account.points = 0;
-            changed = true;
-        } else {
-            account.points = Math.floor(normalizedPoints);
-        }
-
-        if (account.passwordHash && account.passwordSalt) {
-            if (account.password) {
-                delete account.password;
-                changed = true;
-            }
-            continue;
-        }
-
-        // Legacy accounts stored `password` in plain text. Convert to salted hash.
-        if (typeof account.password === "string" && account.password.length > 0) {
-            const salt = randomSaltBase64();
-            const passwordHash = await hashPassword(account.password, salt);
-            account.passwordSalt = salt;
-            account.passwordHash = passwordHash;
-            account.passwordAlgo = `PBKDF2-${PBKDF2_HASH}-${PBKDF2_ITERATIONS}`;
-            delete account.password;
-            changed = true;
-            continue;
-        }
-
-        // Admin should always have a password hash, even if storage was cleared.
-        if (isAdmin) {
-            const salt = randomSaltBase64();
-            const passwordHash = await hashPassword(DEFAULT_ADMIN_PASSWORD, salt);
-            account.passwordSalt = salt;
-            account.passwordHash = passwordHash;
-            account.passwordAlgo = `PBKDF2-${PBKDF2_HASH}-${PBKDF2_ITERATIONS}`;
-            changed = true;
-        }
-    }
-
-    return changed;
-}
-
-async function getAccounts() {
-    const accounts = JSON.parse(localStorage.getItem("gdAccounts")) || [];
-
-    let hasAdmin = false;
-    for (const account of accounts) {
-        if (account && account.username === ADMIN_USERNAME) {
-            hasAdmin = true;
-            break;
-        }
-    }
-
-    if (!hasAdmin) {
-        accounts.push({
-            username: ADMIN_USERNAME,
-            role: ADMIN_ROLE,
-            points: 0,
-            createdAt: "Built-in admin account",
-            lastLogin: "Never"
-        });
-    }
-
-    const changed = await migrateAccountPasswords(accounts);
-    if (changed || !hasAdmin) {
-        localStorage.setItem("gdAccounts", JSON.stringify(accounts));
-    }
-
-    return accounts;
-}
-
-function saveAccounts(accounts) {
-    localStorage.setItem("gdAccounts", JSON.stringify(accounts));
-}
-
-async function findAccount(username) {
-    const normalized = username.trim().toLowerCase();
-    const accounts = await getAccounts();
-    return accounts.find((account) => String(account.username || "").toLowerCase() === normalized);
 }
 
 function authLoggedInUsername() {
@@ -300,32 +145,6 @@ function applyAuthInputLimits() {
     }
 }
 
-async function updateLoginView() {
-    await getAccounts();
-
-    const loginButton = document.getElementById("loginButton");
-    const loginInfo = document.getElementById("loginInfo");
-    const username = authLoggedInUsername();
-    const role = currentRole();
-
-    document.getElementById("loginName").innerText = username || ADMIN_USERNAME;
-    document.getElementById("panelName").innerText = username || ADMIN_USERNAME;
-    document.getElementById("loginRole").innerText = role;
-    document.getElementById("panelRole").innerText = role;
-
-    if (isLoggedIn()) {
-        loginButton.style.display = "none";
-        loginInfo.classList.add("open");
-    } else {
-        loginButton.style.display = "inline-block";
-        loginInfo.classList.remove("open");
-    }
-
-    if (typeof updatePageForAuth === "function") {
-        await updatePageForAuth();
-    }
-}
-
 function prefillPlayerName(inputId) {
     const input = document.getElementById(inputId);
     const username = authDisplayName();
@@ -350,122 +169,79 @@ async function createAccount(username, password) {
         return;
     }
 
-    if (await findAccount(username)) {
-        showAuthError("That username already exists.");
-        return;
-    }
+    const email = username + "@gd.local";
 
-    const accounts = await getAccounts();
-    const salt = randomSaltBase64();
-    const passwordHash = await hashPassword(password, salt);
-    const newAccount = {
-        username,
-        passwordSalt: salt,
-        passwordHash,
-        passwordAlgo: `PBKDF2-${PBKDF2_HASH}-${PBKDF2_ITERATIONS}`,
-        role: PLAYER_ROLE,
-        points: 0,
-        createdAt: new Date().toLocaleString(),
-        lastLogin: "Just created"
-    };
-
-    accounts.push(newAccount);
-    saveAccounts(accounts);
-
-    localStorage.setItem("gdLoggedIn", "true");
-    localStorage.setItem("gdUsername", newAccount.username);
-    localStorage.setItem("gdRole", newAccount.role);
-
-    closeLoginPopup();
-    clearAuthInputs();
-    clearAuthError();
-    await updateLoginView();
-    alert("Account created!");
-}
-
-async function logIntoAccount(username, password) {
-    if (username.length > AUTH_TEXT_LIMIT || password.length > AUTH_TEXT_LIMIT) {
-        showAuthError(`Username and password must be ${AUTH_TEXT_LIMIT} characters or less.`);
-        return;
-    }
-
-    const account = await findAccount(username);
-    if (!account) {
-        showAuthError("Wrong username or password.");
-        return;
-    }
-
-    if (account.passwordSalt && account.passwordHash) {
-        const attemptHash = await hashPassword(password, account.passwordSalt);
-        if (attemptHash !== account.passwordHash) {
-            showAuthError("Wrong username or password.");
-            return;
-        }
-    } else if (typeof account.password === "string") {
-        // Legacy fallback (should be migrated on page load, but keep this for safety).
-        if (account.password !== password) {
-            showAuthError("Wrong username or password.");
-            return;
-        }
-        const salt = randomSaltBase64();
-        account.passwordSalt = salt;
-        account.passwordHash = await hashPassword(password, salt);
-        account.passwordAlgo = `PBKDF2-${PBKDF2_HASH}-${PBKDF2_ITERATIONS}`;
-        delete account.password;
-    } else {
-        showAuthError("This account needs a password reset.");
-        return;
-    }
-
-    const accounts = await getAccounts();
-    const now = new Date().toLocaleString();
-    const updated = accounts.map((savedAccount) => {
-        if (savedAccount.username === account.username) {
-            return { ...savedAccount, lastLogin: now };
-        }
-        return savedAccount;
+    // 1. CREATE AUTH USER (THIS IS WHAT YOU ARE MISSING)
+    const { data: signUpData, error: signUpError } = await supabaseClient.auth.signUp({
+        email,
+        password
     });
 
-    saveAccounts(updated);
+    if (signUpError) {
+        console.log(signUpError);
+        showAuthError("Signup failed.");
+        return;
+    }
+
+    // 2. CREATE PROFILE ROW
+    const { error } = await supabaseClient
+        .from("users")
+        .insert([
+            {
+                username: username,
+                points: 0
+            }
+        ]);
+
+    if (error) {
+        console.log(error);
+        showAuthError("Error saving profile.");
+        return;
+    }
+
     localStorage.setItem("gdLoggedIn", "true");
-    localStorage.setItem("gdUsername", account.username);
-    localStorage.setItem("gdRole", account.role || PLAYER_ROLE);
+    localStorage.setItem("gdUsername", username);
+    localStorage.setItem("gdRole", username === ADMIN_USERNAME ? "Admin" : "Player");
 
     closeLoginPopup();
     clearAuthInputs();
     clearAuthError();
     await updateLoginView();
+
+    alert("Account created!");
 }
 
 async function submitLogin() {
     const username = document.getElementById("username").value.trim();
     const password = document.getElementById("password").value;
 
-    if (authMode === "signup") {
-        await createAccount(username, password);
-    } else {
-        const res = await fetch("https://gd-skill-points.onrender.com/api/auth/login", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ username, password })
-});
-
-const data = await res.json();
-
-if (!res.ok) {
-    showAuthError(data.error || "Login failed");
-    return;
-}
-
-localStorage.setItem("gdLoggedIn", "true");
-localStorage.setItem("gdUsername", data.user.username);
-localStorage.setItem("gdRole", data.user.role);
-
-closeLoginPopup();
-clearAuthInputs();
-await updateLoginView();
+    if (!username || !password) {
+        showAuthError("Please enter username and password.");
+        return;
     }
+
+    const email = username + "@gd.local";
+
+    const { data, error } = await supabaseClient.auth.signInWithPassword({
+        email,
+        password
+    });
+
+    if (error || !data.user) {
+        showAuthError("Wrong username or password.");
+        return;
+    }
+
+    localStorage.setItem("gdLoggedIn", "true");
+    localStorage.setItem("gdUsername", username);
+    localStorage.setItem("gdRole", "Player");
+
+    closeLoginPopup();
+    clearAuthInputs();
+    clearAuthError();
+    await updateLoginView();
 }
+
 
 function logOut() {
     localStorage.removeItem("gdLoggedIn");
@@ -473,14 +249,6 @@ function logOut() {
     localStorage.removeItem("gdRole");
     closeAccountPopup();
     updateLoginView();
-}
-
-async function initializeAuthUi() {
-    await getAccounts();
-    applyAuthInputLimits();
-    buildAuthModeUi();
-    setAuthMode("login");
-    await updateLoginView();
 }
 
 document.addEventListener("DOMContentLoaded", () => {
