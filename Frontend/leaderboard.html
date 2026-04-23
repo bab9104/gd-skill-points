@@ -30,56 +30,118 @@
     <div class="panel"><h1>Leaderboard</h1><div class="top-bar"><a class="button-link home-link" href="index.html">Back to Home</a><button class="danger" id="deleteAllButton" onclick="deleteAll()">Delete All Scores</button></div><div id="list"></div></div>
 
     <script>
+        const LEADERBOARD_TABLE = "leaderboard";
+
         function leaderboardAdminEnabled() {
             return isAdminLoggedIn();
         }
 
         const list = document.getElementById("list");
         const deleteAllButton = document.getElementById("deleteAllButton");
+        let leaderboardRows = [];
+        let leaderboardRequestToken = 0;
 
-        async function getLeaderboardAccounts() {
-            return (await getAccounts())
-                .filter((account) => account && account.username)
-                .map((account) => ({
-                    username: account.username,
-                    points: Math.max(0, Math.floor(Number(account.points) || 0))
-                }));
+        function getLeaderboardSupabaseClient() {
+            if (typeof getSupabaseClient === "function") {
+                return getSupabaseClient();
+            }
+
+            return window.supabaseClient || null;
         }
 
-        function saveLeaderboardAccounts(items) {
-            saveAccounts(items);
+        function normalizeLeaderboardValue(value) {
+            return String(value || "").trim();
         }
 
-        async function deleteScore(username) {
-            if (!leaderboardAdminEnabled()) return;
+        function normalizeLeaderboardIdentifier(row) {
+            const userId = normalizeLeaderboardValue(row && (row.user_id || row.userId)).toLowerCase();
+            if (userId) {
+                return `user:${userId}`;
+            }
 
-            const accounts = await getAccounts();
-            const updatedAccounts = accounts.map((account) => {
-                if (account.username !== username) return account;
-                return { ...account, points: 0 };
+            const email = normalizeLeaderboardValue(row && row.email).toLowerCase();
+            if (email) {
+                return `email:${email}`;
+            }
+
+            const username = normalizeLeaderboardValue(row && row.username).toLowerCase();
+            if (username) {
+                return `username:${username}`;
+            }
+
+            const name = normalizeLeaderboardValue(row && row.name).toLowerCase();
+            if (name) {
+                return `name:${name}`;
+            }
+
+            const id = normalizeLeaderboardValue(row && row.id);
+            return id ? `row:${id}` : "";
+        }
+
+        function normalizeLeaderboardRow(row) {
+            const id = normalizeLeaderboardValue(row && row.id);
+            const email = normalizeLeaderboardValue(row && row.email);
+            const username = normalizeLeaderboardValue(row && row.username);
+            const name = normalizeLeaderboardValue(row && row.name);
+            const displayName = email || username || name || normalizeLeaderboardValue(row && (row.user_id || row.userId)) || "Unknown player";
+            const submittedAt = normalizeLeaderboardValue(
+                row && (row.submitted_at || row.submittedAt || row.created_at || row.createdAt || row.updated_at || row.updatedAt)
+            );
+            const submittedTime = submittedAt ? Date.parse(submittedAt) : 0;
+
+            return {
+                raw: row,
+                id,
+                identifier: normalizeLeaderboardIdentifier(row),
+                displayName,
+                score: Math.max(0, Math.floor(Number(row && (row.score ?? row.points)) || 0)),
+                submittedAt,
+                submittedTime: Number.isNaN(submittedTime) ? 0 : submittedTime
+            };
+        }
+
+        function getDisplayLeaderboardRows() {
+            const uniqueById = new Map();
+            leaderboardRows.forEach((row) => {
+                const normalizedRow = normalizeLeaderboardRow(row);
+                if (normalizedRow.id && !uniqueById.has(normalizedRow.id)) {
+                    uniqueById.set(normalizedRow.id, normalizedRow);
+                }
             });
 
-            saveLeaderboardAccounts(updatedAccounts);
-            render();
+            const rankedRows = [...uniqueById.values()].sort((a, b) => {
+                if (b.score !== a.score) {
+                    return b.score - a.score;
+                }
+
+                return b.submittedTime - a.submittedTime;
+            });
+
+            const dedupedRows = [];
+            const seenIdentifiers = new Set();
+
+            rankedRows.forEach((row) => {
+                if (row.identifier && seenIdentifiers.has(row.identifier)) {
+                    return;
+                }
+
+                if (row.identifier) {
+                    seenIdentifiers.add(row.identifier);
+                }
+
+                dedupedRows.push(row);
+            });
+
+            return dedupedRows;
         }
 
-        async function deleteAll() {
-            if (!leaderboardAdminEnabled()) return;
-            if (!confirm("Reset every player's points to 0?")) return;
-
-            const accounts = await getAccounts();
-            const updatedAccounts = accounts.map((account) => ({ ...account, points: 0 }));
-            saveLeaderboardAccounts(updatedAccounts);
-            render();
-        }
-
-        async function render() {
+        function renderLeaderboard() {
             if (!list || !deleteAllButton) return;
 
             list.innerHTML = "";
             deleteAllButton.style.display = leaderboardAdminEnabled() ? "inline-block" : "none";
 
-            const sortedScores = (await getLeaderboardAccounts()).sort((a, b) => b.points - a.points);
+            const sortedScores = getDisplayLeaderboardRows();
             if (sortedScores.length === 0) {
                 list.innerHTML = '<p class="empty">No scores yet.</p>';
                 return;
@@ -98,7 +160,7 @@
                 scoreText.className = "score-text";
                 actions.className = "score-actions";
 
-                scoreText.textContent = `${index + 1}. ${entry.username} - ${entry.points} pts`;
+                scoreText.textContent = `${index + 1}. ${entry.displayName} - ${entry.score} pts`;
                 info.appendChild(scoreText);
 
                 if (leaderboardAdminEnabled()) {
@@ -107,7 +169,7 @@
                     deleteButton.textContent = "X";
                     deleteButton.onclick = async (event) => {
                         event.stopPropagation();
-                        await deleteScore(entry.username);
+                        await deleteScore(entry.id);
                     };
                     actions.appendChild(deleteButton);
                 }
@@ -119,17 +181,73 @@
             });
         }
 
+        async function refreshLeaderboard() {
+            const supabaseClient = getLeaderboardSupabaseClient();
+            if (!supabaseClient) {
+                leaderboardRows = [];
+                renderLeaderboard();
+                return;
+            }
+
+            const requestToken = ++leaderboardRequestToken;
+            const { data, error } = await supabaseClient
+                .from(LEADERBOARD_TABLE)
+                .select("*");
+
+            if (requestToken !== leaderboardRequestToken) {
+                return;
+            }
+
+            if (error) {
+                console.error("Failed to load leaderboard from Supabase:", error);
+                leaderboardRows = [];
+                renderLeaderboard();
+                return;
+            }
+
+            leaderboardRows = Array.isArray(data) ? data : [];
+            renderLeaderboard();
+        }
+
+        async function deleteScore(rowId) {
+            if (!leaderboardAdminEnabled() || !rowId) return;
+
+            const supabaseClient = getLeaderboardSupabaseClient();
+            if (!supabaseClient) {
+                return;
+            }
+
+            const { error } = await supabaseClient
+                .from(LEADERBOARD_TABLE)
+                .delete()
+                .eq("id", rowId);
+
+            if (error) {
+                console.error("Failed to delete leaderboard row:", error);
+                return;
+            }
+
+            await refreshLeaderboard();
+        }
+
+        async function deleteAll() {
+            if (!leaderboardAdminEnabled()) return;
+            if (!confirm("Delete every leaderboard entry?")) return;
+
+            const rows = getDisplayLeaderboardRows();
+            for (const row of rows) {
+                await deleteScore(row.id);
+            }
+        }
+
         function updatePageForAuth() {
-            render();
+            renderLeaderboard();
         }
 
         document.addEventListener("DOMContentLoaded", () => {
-            render();
-            if (window.gdAppState) {
-                gdAppState.onChange(["accounts"], () => {
-                    render();
-                });
-            }
+            refreshLeaderboard().catch((error) => {
+                console.error("Leaderboard refresh failed:", error);
+            });
         });
     </script>
     <script src="auth.js"></script>

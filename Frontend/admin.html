@@ -78,6 +78,7 @@
     </div>
 
     <script>
+        const LEADERBOARD_TABLE = "leaderboard";
         const queueList = document.getElementById("queueList");
         const queuePanel = document.getElementById("queuePanel");
         const homePanel = document.getElementById("homePanel");
@@ -104,8 +105,12 @@
             localStorage.setItem("pendingScores", JSON.stringify(pendingScores));
         }
 
-        function getApprovedScores() {
-            return JSON.parse(localStorage.getItem("scores")) || [];
+        function getAdminSupabaseClient() {
+            if (typeof getSupabaseClient === "function") {
+                return getSupabaseClient();
+            }
+
+            return window.supabaseClient || null;
         }
 
         function renderHomeBoxes() {
@@ -267,24 +272,36 @@
             });
         }
 
-        function approveSubmission(index) {
+        async function approveSubmission(index) {
             if (!isAdminLoggedIn()) return;
 
             const pendingScores = getPendingScores();
-            const approvedScores = getApprovedScores();
             const selected = pendingScores[index];
 
             if (!selected) return;
 
-            approvedScores.push({
-                name: selected.name,
-                score: selected.score,
-                details: selected.details || [],
-                submittedAt: selected.submittedAt || "Unknown time"
-            });
+            const supabaseClient = getAdminSupabaseClient();
+            if (!supabaseClient) {
+                alert("Supabase is not available on this page.");
+                return;
+            }
+
+            const payload = {
+                name: String(selected.name || "").trim(),
+                score: Math.max(0, Math.floor(Number(selected.score) || 0))
+            };
+
+            const { error } = await supabaseClient
+                .from(LEADERBOARD_TABLE)
+                .insert(payload);
+
+            if (error) {
+                console.error("Failed to approve score into Supabase leaderboard:", error);
+                alert("Could not save that score to the leaderboard.");
+                return;
+            }
 
             pendingScores.splice(index, 1);
-            localStorage.setItem("scores", JSON.stringify(approvedScores));
             savePendingScores(pendingScores);
             renderQueue();
         }
