@@ -6,8 +6,7 @@ let authMode = "login";
 const AUTH_TEXT_LIMIT = 35;
 const SUPABASE_URL = "https://juezglucqtenahnhsvri.supabase.co";
 const SUPABASE_ANON_KEY = "sb_publishable_wvpNjf_yBYQyycCxFyGC3g_oOlXUytP";
-const SUPABASE_SETTINGS_TABLE = "site_settings";
-const SUPABASE_HOME_MENU_BOXES_KEY = "home_menu_boxes";
+const SUPABASE_MENU_BOXES_TABLE = "menu_boxes";
 const GD_STATE_CHANGE_EVENT = "gd:statechange";
 const GD_STORAGE_KEYS = {
     accounts: "gdAccounts",
@@ -26,7 +25,10 @@ const LEGACY_AUTH_KEYS = ["gdLoggedIn", "gdUsername", "gdRole"];
 let currentSession = null;
 let authSubscription = null;
 let homeMenuBoxesLoadPromise = null;
+let homeMenuBoxesLoadUserId = "";
 let homeMenuBoxesRealtimeChannel = null;
+let homeMenuBoxesRealtimeUserId = "";
+let homeMenuBoxesCache = [];
 
 function escapeHtml(value) {
     return String(value)
@@ -50,12 +52,24 @@ function safeParseJson(value, fallback) {
     }
 }
 
-function readStoredArray(key) {
+function readLocalStoredArray(key) {
     const value = safeParseJson(localStorage.getItem(key), []);
     return Array.isArray(value) ? value : [];
 }
 
+function readStoredArray(key) {
+    if (key === GD_STORAGE_KEYS.homeMenuBoxes) {
+        return getHomeMenuBoxes();
+    }
+
+    return readLocalStoredArray(key);
+}
+
 function readStoredValue(key) {
+    if (key === GD_STORAGE_KEYS.homeMenuBoxes) {
+        return getHomeMenuBoxes();
+    }
+
     if (GD_ARRAY_KEYS.has(key)) {
         return readStoredArray(key);
     }
@@ -64,6 +78,11 @@ function readStoredValue(key) {
 }
 
 function writeStoredArray(key, value, options = {}) {
+    if (key === GD_STORAGE_KEYS.homeMenuBoxes) {
+        setHomeMenuBoxesCache(value, options);
+        return;
+    }
+
     localStorage.setItem(key, JSON.stringify(value));
     if (options.notify !== false) {
         notifyStateChange(key, options.source || "local");
@@ -127,30 +146,21 @@ function cleanupLegacyAuthStorage() {
     });
 }
 
-function normalizeUsername(username) {
-    return String(username || "").trim();
-}
-
-function usernameToEmail(username) {
-    return `${normalizeUsername(username).toLowerCase()}@gd.local`;
-}
-
-function emailToUsername(email) {
-    return String(email || "").split("@")[0] || "";
+function normalizeEmail(email) {
+    return String(email || "").trim().toLowerCase();
 }
 
 function getCurrentUser(session = currentSession) {
     return session && session.user ? session.user : null;
 }
 
-function getSessionUsername(session = currentSession) {
+function getSessionEmail(session = currentSession) {
     const user = getCurrentUser(session);
     if (!user) {
         return "";
     }
 
-    const metadataUsername = String(user.user_metadata && user.user_metadata.username || "").trim();
-    return metadataUsername || emailToUsername(user.email);
+    return normalizeEmail(user.email);
 }
 
 function getSessionRole(session = currentSession) {
@@ -159,16 +169,13 @@ function getSessionRole(session = currentSession) {
         return USER_ROLE;
     }
 
-    const metadataRole = String(
-        (user.user_metadata && user.user_metadata.role)
-        || ""
-    ).trim().toLowerCase();
-
-    return metadataRole === ADMIN_ROLE ? ADMIN_ROLE : USER_ROLE;
+    return user.user_metadata && user.user_metadata.role === ADMIN_ROLE
+        ? ADMIN_ROLE
+        : USER_ROLE;
 }
 
-function authLoggedInUsername() {
-    return getSessionUsername();
+function authLoggedInEmail() {
+    return getSessionEmail();
 }
 
 function isLoggedIn() {
@@ -184,7 +191,7 @@ function currentRole() {
 }
 
 function authDisplayName() {
-    return authLoggedInUsername();
+    return authLoggedInEmail();
 }
 
 function authErrorElement() {
@@ -208,11 +215,11 @@ function clearAuthError() {
     }
 
     errorText.classList.remove("open");
-    errorText.innerText = "Wrong username or password.";
+    errorText.innerText = "Wrong email or password.";
 }
 
 function normalizeAccountProfile(account) {
-    const username = normalizeUsername(account && account.username);
+    const username = String(account && account.username || "").trim();
     if (!username) {
         return null;
     }
@@ -225,6 +232,19 @@ function normalizeAccountProfile(account) {
         lastLogin: account && account.lastLogin ? account.lastLogin : "Never",
         points: Math.max(0, Math.floor(Number(account && account.points) || 0))
     };
+}
+
+function formatAccountTimestamp(value) {
+    if (!value) {
+        return "Never";
+    }
+
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) {
+        return String(value);
+    }
+
+    return date.toLocaleString();
 }
 
 async function getAccounts() {
@@ -241,44 +261,36 @@ function saveAccounts(accounts, options = {}) {
     writeStoredArray(GD_STORAGE_KEYS.accounts, normalizedAccounts, options);
 }
 
-async function syncSessionProfile(session, options = {}) {
-    const username = getSessionUsername(session);
-    if (!username) {
-        return;
+async function getSupabaseAccounts() {
+    const supabaseClient = getSupabaseClient();
+    if (!supabaseClient) {
+        throw new Error("Supabase is not available on this page.");
     }
 
-    const role = getSessionRole(session);
-    const loginTime = new Date().toLocaleString();
-    const user = getCurrentUser(session);
-    const createdAt = new Date(user && user.created_at ? user.created_at : Date.now()).toLocaleString();
-    const accounts = await getAccounts();
-    let found = false;
-
-    const updatedAccounts = accounts.map((account) => {
-        if (account.username !== username) {
-            return account;
-        }
-
-        found = true;
-        return {
-            ...account,
-            role,
-            createdAt: account.createdAt || createdAt,
-            lastLogin: options.markLogin ? loginTime : (account.lastLogin || "Never")
-        };
-    });
-
-    if (!found) {
-        updatedAccounts.push({
-            username,
-            role,
-            createdAt,
-            lastLogin: options.markLogin ? loginTime : "Never",
-            points: 0
-        });
+    const user = getCurrentUser();
+    if (!user) {
+        return [];
     }
 
-    saveAccounts(updatedAccounts, { source: options.source || "auth" });
+    const { data, error } = await supabaseClient.rpc("admin_list_accounts");
+    if (error) {
+        throw error;
+    }
+
+    return Array.isArray(data)
+        ? data.map((account) => ({
+            id: String(account && account.user_id || ""),
+            email: String(account && account.email || ""),
+            username: String(
+                (account && account.username)
+                || account && account.email
+                || ""
+            ).trim(),
+            role: String(account && account.role || USER_ROLE).toLowerCase() === ADMIN_ROLE ? ADMIN_ROLE : USER_ROLE,
+            createdAt: formatAccountTimestamp(account && account.created_at),
+            lastLogin: formatAccountTimestamp(account && account.last_sign_in_at)
+        })).filter((account) => account.id && account.username)
+        : [];
 }
 
 function getPendingScores() {
@@ -298,7 +310,7 @@ function saveApprovedScores(scores, options = {}) {
 }
 
 function getHomeMenuBoxes() {
-    return readStoredArray(GD_STORAGE_KEYS.homeMenuBoxes);
+    return homeMenuBoxesCache.map((item) => ({ ...item }));
 }
 
 function normalizeHomeMenuBoxes(items) {
@@ -308,121 +320,271 @@ function normalizeHomeMenuBoxes(items) {
 
     return items.map((item) => {
         const normalizedTitle = String((item && (item.title || item.text)) || "").trim();
-        const normalizedDescription = String((item && item.description) || "").trim();
+        const normalizedContent = String((item && (item.content ?? item.description)) || "").trim();
 
         return {
             id: item && item.id ? String(item.id) : crypto.randomUUID(),
             title: normalizedTitle,
-            description: normalizedDescription
+            content: normalizedContent,
+            description: normalizedContent,
+            createdAt: item && (item.createdAt || item.created_at) ? String(item.createdAt || item.created_at) : ""
         };
     }).filter((item) => item.title);
 }
 
-async function loadHomeMenuBoxesFromSupabase(options = {}) {
+function setHomeMenuBoxesCache(items, options = {}) {
+    homeMenuBoxesCache = normalizeHomeMenuBoxes(items);
+    if (options.notify !== false) {
+        notifyStateChange(GD_STORAGE_KEYS.homeMenuBoxes, options.source || "memory");
+    }
+    return getHomeMenuBoxes();
+}
+
+function requireMenuBoxesUser(options = {}) {
+    const user = options.user || getCurrentUser(options.session || currentSession);
+    if (!user) {
+        throw new Error("You must be logged in to manage menu boxes.");
+    }
+
+    return user;
+}
+
+async function loadMenuBoxes(options = {}) {
     const supabaseClient = getSupabaseClient();
     if (!supabaseClient) {
-        return getHomeMenuBoxes();
+        return setHomeMenuBoxesCache([], {
+            notify: options.notify !== false,
+            source: "memory"
+        });
+    }
+
+    const user = getCurrentUser(options.session || currentSession);
+    if (!user) {
+        return setHomeMenuBoxesCache([], {
+            notify: options.notify !== false,
+            source: options.source || "auth"
+        });
     }
 
     try {
         const { data, error } = await supabaseClient
-            .from(SUPABASE_SETTINGS_TABLE)
-            .select("value")
-            .eq("key", SUPABASE_HOME_MENU_BOXES_KEY)
-            .maybeSingle();
+            .from(SUPABASE_MENU_BOXES_TABLE)
+            .select("id, user_id, title, content, created_at")
+            .eq("user_id", user.id)
+            .order("created_at", { ascending: true });
 
         if (error) {
             throw error;
         }
 
-        const items = normalizeHomeMenuBoxes(data && Array.isArray(data.value) ? data.value : []);
-        writeStoredArray(GD_STORAGE_KEYS.homeMenuBoxes, items, {
+        return setHomeMenuBoxesCache(Array.isArray(data) ? data : [], {
             notify: options.notify !== false,
-            source: "remote"
+            source: options.source || "remote"
         });
-        return items;
     } catch (error) {
-        console.warn("Failed to load menu boxes from Supabase. Falling back to localStorage.", error);
+        console.warn("Failed to load menu boxes from Supabase.", error);
         return getHomeMenuBoxes();
     }
 }
 
-function ensureHomeMenuBoxesLoaded() {
-    if (!homeMenuBoxesLoadPromise) {
-        homeMenuBoxesLoadPromise = loadHomeMenuBoxesFromSupabase().finally(() => {
+async function loadHomeMenuBoxesFromSupabase(options = {}) {
+    return loadMenuBoxes(options);
+}
+
+function ensureHomeMenuBoxesLoaded(options = {}) {
+    const user = getCurrentUser(options.session || currentSession);
+    const loadUserId = user ? user.id : "";
+
+    if (!homeMenuBoxesLoadPromise || homeMenuBoxesLoadUserId !== loadUserId) {
+        homeMenuBoxesLoadUserId = loadUserId;
+        homeMenuBoxesLoadPromise = loadMenuBoxes(options).finally(() => {
             homeMenuBoxesLoadPromise = null;
+            homeMenuBoxesLoadUserId = "";
         });
     }
 
     return homeMenuBoxesLoadPromise;
 }
 
-async function saveHomeMenuBoxes(items, options = {}) {
-    const normalizedItems = normalizeHomeMenuBoxes(items);
-    writeStoredArray(GD_STORAGE_KEYS.homeMenuBoxes, normalizedItems, options);
-
-    if (options.remote === false) {
-        return normalizedItems;
+async function saveMenuBox(item, options = {}) {
+    const normalizedItem = normalizeHomeMenuBoxes([item])[0];
+    if (!normalizedItem) {
+        throw new Error("Menu box title is required.");
     }
 
     const supabaseClient = getSupabaseClient();
+    const user = requireMenuBoxesUser(options);
     if (!supabaseClient) {
-        return normalizedItems;
+        throw new Error("Supabase is not available on this page.");
     }
 
-    try {
-        const { error } = await supabaseClient
-            .from(SUPABASE_SETTINGS_TABLE)
-            .upsert({
-                key: SUPABASE_HOME_MENU_BOXES_KEY,
-                value: normalizedItems
-            }, {
-                onConflict: "key"
-            });
+    const { data, error } = await supabaseClient
+        .from(SUPABASE_MENU_BOXES_TABLE)
+        .insert({
+            user_id: user.id,
+            title: normalizedItem.title,
+            content: normalizedItem.content
+        })
+        .select("id, user_id, title, content, created_at")
+        .single();
 
-        if (error) {
-            throw error;
-        }
-    } catch (error) {
-        console.warn("Failed to save menu boxes to Supabase. Local copy was kept.", error);
+    if (error) {
+        throw error;
     }
 
-    return normalizedItems;
+    const savedItem = normalizeHomeMenuBoxes([data])[0];
+    setHomeMenuBoxesCache([...homeMenuBoxesCache, savedItem], {
+        source: options.source || "remote"
+    });
+    return savedItem;
 }
 
-function subscribeToRemoteHomeMenuBoxes() {
+async function updateMenuBox(id, item, options = {}) {
+    const normalizedItem = normalizeHomeMenuBoxes([{ ...item, id }])[0];
+    if (!normalizedItem) {
+        throw new Error("Menu box title is required.");
+    }
+
     const supabaseClient = getSupabaseClient();
-    if (!supabaseClient || homeMenuBoxesRealtimeChannel) {
+    const user = requireMenuBoxesUser(options);
+    if (!supabaseClient) {
+        throw new Error("Supabase is not available on this page.");
+    }
+
+    const { data, error } = await supabaseClient
+        .from(SUPABASE_MENU_BOXES_TABLE)
+        .update({
+            title: normalizedItem.title,
+            content: normalizedItem.content
+        })
+        .eq("id", id)
+        .eq("user_id", user.id)
+        .select("id, user_id, title, content, created_at")
+        .single();
+
+    if (error) {
+        throw error;
+    }
+
+    const updatedItem = normalizeHomeMenuBoxes([data])[0];
+    setHomeMenuBoxesCache(
+        homeMenuBoxesCache.map((existingItem) => existingItem.id === updatedItem.id ? updatedItem : existingItem),
+        { source: options.source || "remote" }
+    );
+    return updatedItem;
+}
+
+async function deleteMenuBox(id, options = {}) {
+    const supabaseClient = getSupabaseClient();
+    const user = requireMenuBoxesUser(options);
+    if (!supabaseClient) {
+        throw new Error("Supabase is not available on this page.");
+    }
+
+    const { error } = await supabaseClient
+        .from(SUPABASE_MENU_BOXES_TABLE)
+        .delete()
+        .eq("id", id)
+        .eq("user_id", user.id);
+
+    if (error) {
+        throw error;
+    }
+
+    setHomeMenuBoxesCache(
+        homeMenuBoxesCache.filter((item) => item.id !== id),
+        { source: options.source || "remote" }
+    );
+}
+
+async function saveHomeMenuBoxes(items, options = {}) {
+    const normalizedItems = normalizeHomeMenuBoxes(items);
+    const currentItems = getHomeMenuBoxes();
+
+    const currentById = new Map(currentItems.map((item) => [item.id, item]));
+    const nextById = new Map(normalizedItems.map((item) => [item.id, item]));
+
+    for (const currentItem of currentItems) {
+        if (!nextById.has(currentItem.id)) {
+            await deleteMenuBox(currentItem.id, options);
+        }
+    }
+
+    for (const nextItem of normalizedItems) {
+        if (!currentById.has(nextItem.id)) {
+            await saveMenuBox(nextItem, options);
+            continue;
+        }
+
+        const currentItem = currentById.get(nextItem.id);
+        if (currentItem.title !== nextItem.title || currentItem.content !== nextItem.content) {
+            await updateMenuBox(nextItem.id, nextItem, options);
+        }
+    }
+
+    return getHomeMenuBoxes();
+}
+
+function unsubscribeHomeMenuBoxesRealtime() {
+    const supabaseClient = getSupabaseClient();
+    if (supabaseClient && homeMenuBoxesRealtimeChannel && typeof supabaseClient.removeChannel === "function") {
+        supabaseClient.removeChannel(homeMenuBoxesRealtimeChannel);
+    }
+
+    homeMenuBoxesRealtimeChannel = null;
+    homeMenuBoxesRealtimeUserId = "";
+}
+
+function subscribeToRemoteHomeMenuBoxes(session = currentSession) {
+    const supabaseClient = getSupabaseClient();
+    const user = getCurrentUser(session);
+    if (!supabaseClient || !user) {
+        unsubscribeHomeMenuBoxesRealtime();
         return;
     }
 
+    if (homeMenuBoxesRealtimeChannel && homeMenuBoxesRealtimeUserId === user.id) {
+        return;
+    }
+
+    unsubscribeHomeMenuBoxesRealtime();
+
     homeMenuBoxesRealtimeChannel = supabaseClient
-        .channel("gd-home-menu-boxes")
+        .channel(`gd-home-menu-boxes-${user.id}`)
         .on("postgres_changes", {
             event: "*",
             schema: "public",
-            table: SUPABASE_SETTINGS_TABLE,
-            filter: `key=eq.${SUPABASE_HOME_MENU_BOXES_KEY}`
+            table: SUPABASE_MENU_BOXES_TABLE,
+            filter: `user_id=eq.${user.id}`
         }, () => {
-            loadHomeMenuBoxesFromSupabase();
+            loadMenuBoxes({ source: "remote", user }).catch((error) => {
+                console.warn("Failed to refresh menu boxes from realtime event.", error);
+            });
         })
         .subscribe((status) => {
             if (status === "CHANNEL_ERROR") {
                 console.warn("Supabase realtime subscription failed for menu boxes.");
             }
         });
+
+    homeMenuBoxesRealtimeUserId = user.id;
 }
 
 const gdAppState = {
     keys: GD_STORAGE_KEYS,
     onChange,
     getAccounts,
+    getSupabaseAccounts,
     saveAccounts,
     getPendingScores,
     savePendingScores,
     getApprovedScores,
     saveApprovedScores,
     getHomeMenuBoxes,
+    loadMenuBoxes,
+    saveMenuBox,
+    updateMenuBox,
+    deleteMenuBox,
     saveHomeMenuBoxes,
     loadHomeMenuBoxesFromSupabase
 };
@@ -438,6 +600,8 @@ function buildAuthModeUi() {
     const popupTitle = popup.querySelector("h2");
     const popupText = popup.querySelector(".auth-popup-text");
     const firstField = popup.querySelector(".auth-field");
+    const emailLabel = popup.querySelector('label[for="username"]');
+    const emailInput = popup.querySelector("#username");
 
     if (!popupTitle || !popupText || !firstField) {
         return;
@@ -457,7 +621,18 @@ function buildAuthModeUi() {
     const helperText = document.createElement("p");
     helperText.className = "auth-helper-text";
     helperText.id = "authHelperText";
-    helperText.textContent = "Use a username and password. Internally the username becomes username@gd.local in Supabase Auth.";
+    helperText.textContent = "Use your real email and password for Supabase Auth.";
+
+    if (emailLabel) {
+        emailLabel.innerText = "Email";
+    }
+
+    if (emailInput) {
+        emailInput.type = "email";
+        emailInput.placeholder = "Email";
+        emailInput.autocomplete = "email";
+        emailInput.inputMode = "email";
+    }
 
     popup.insertBefore(modeSwitch, firstField);
     popup.insertBefore(helperText, firstField);
@@ -478,13 +653,13 @@ function setAuthMode(mode) {
 
     if (mode === "signup") {
         title.innerText = "Create Account";
-        text.innerText = "Sign up with a username and password.";
+        text.innerText = "Sign up with your email and password.";
         submitButton.innerText = "Create Account";
         loginModeButton.classList.remove("active");
         signupModeButton.classList.add("active");
     } else {
         title.innerText = "Log In";
-        text.innerText = "Log in with a username and password.";
+        text.innerText = "Log in with your email and password.";
         submitButton.innerText = "Log In";
         loginModeButton.classList.add("active");
         signupModeButton.classList.remove("active");
@@ -525,11 +700,11 @@ function closeAccountPopup() {
 }
 
 function clearAuthInputs() {
-    const usernameInput = document.getElementById("username");
+    const emailInput = document.getElementById("username");
     const passwordInput = document.getElementById("password");
 
-    if (usernameInput) {
-        usernameInput.value = "";
+    if (emailInput) {
+        emailInput.value = "";
     }
 
     if (passwordInput) {
@@ -538,11 +713,11 @@ function clearAuthInputs() {
 }
 
 function applyAuthInputLimits() {
-    const usernameInput = document.getElementById("username");
+    const emailInput = document.getElementById("username");
     const passwordInput = document.getElementById("password");
 
-    if (usernameInput) {
-        usernameInput.maxLength = AUTH_TEXT_LIMIT;
+    if (emailInput) {
+        emailInput.maxLength = 254;
     }
 
     if (passwordInput) {
@@ -562,9 +737,9 @@ function prefillPlayerName(inputId) {
 }
 
 async function updateLoginView() {
-    const username = authLoggedInUsername();
+    const email = authLoggedInEmail();
     const role = currentRole();
-    const displayName = username || "Guest";
+    const displayName = email || "Guest";
     const loginButton = document.getElementById("loginButton");
     const loginInfo = document.getElementById("loginInfo");
     const loginName = document.getElementById("loginName");
@@ -606,15 +781,15 @@ function mapSupabaseAuthError(error, fallbackMessage) {
     const message = rawMessage.toLowerCase();
 
     if (message.includes("invalid login credentials")) {
-        return "Wrong username or password.";
+        return "Wrong email or password.";
     }
 
     if (message.includes("already registered") || message.includes("already been registered")) {
-        return "That username already exists.";
+        return "That email already exists.";
     }
 
     if (message.includes("email not confirmed")) {
-        return "Email confirmation is enabled in Supabase Auth. Turn it off for gd.local usernames.";
+        return "Email confirmation is enabled in Supabase Auth. Confirm the email or disable email confirmation.";
     }
 
     if (rawMessage) {
@@ -624,31 +799,28 @@ function mapSupabaseAuthError(error, fallbackMessage) {
     return fallbackMessage;
 }
 
-function createAuthPayload(username, password) {
-    const cleanUsername = normalizeUsername(username);
-
+function createAuthPayload(email, password) {
     return {
-        email: usernameToEmail(cleanUsername),
-        password,
-        options: {
-            data: {
-                username: cleanUsername,
-                role: USER_ROLE
-            }
-        }
+        email: normalizeEmail(email),
+        password
     };
 }
 
-async function createAccount(username, password) {
-    const cleanUsername = normalizeUsername(username);
+async function createAccount(email, password) {
+    const cleanEmail = normalizeEmail(email);
 
-    if (!cleanUsername || !password) {
-        showAuthError("Type both a username and a password.");
+    if (!cleanEmail || !password) {
+        showAuthError("Type both an email and a password.");
         return;
     }
 
-    if (cleanUsername.length > AUTH_TEXT_LIMIT || password.length > AUTH_TEXT_LIMIT) {
-        showAuthError(`Username and password must be ${AUTH_TEXT_LIMIT} characters or less.`);
+    if (cleanEmail.length > 254) {
+        showAuthError("Email must be 254 characters or less.");
+        return;
+    }
+
+    if (password.length > AUTH_TEXT_LIMIT) {
+        showAuthError(`Password must be ${AUTH_TEXT_LIMIT} characters or less.`);
         return;
     }
 
@@ -660,7 +832,7 @@ async function createAccount(username, password) {
     }
 
     const { data, error } = await supabaseClient.auth.signUp(
-        createAuthPayload(cleanUsername, password)
+        createAuthPayload(cleanEmail, password)
     );
 
     if (error) {
@@ -671,12 +843,11 @@ async function createAccount(username, password) {
 
     if (!data.session) {
         console.error("Supabase signup returned no session. Email confirmation is likely enabled.", data);
-        showAuthError("Signup succeeded, but no session was created. Turn off email confirmation for gd.local usernames.");
+        showAuthError("Signup succeeded, but no session was created. Confirm the email or disable email confirmation.");
         return;
     }
 
     currentSession = data.session;
-    await syncSessionProfile(data.session, { markLogin: true, source: "signup" });
     closeLoginPopup();
     clearAuthInputs();
     clearAuthError();
@@ -684,11 +855,16 @@ async function createAccount(username, password) {
     alert("Account created!");
 }
 
-async function logIntoAccount(username, password) {
-    const cleanUsername = normalizeUsername(username);
+async function logIntoAccount(email, password) {
+    const cleanEmail = normalizeEmail(email);
 
-    if (!cleanUsername || !password) {
-        showAuthError("Type both a username and a password.");
+    if (!cleanEmail || !password) {
+        showAuthError("Type both an email and a password.");
+        return;
+    }
+
+    if (cleanEmail.length > 254) {
+        showAuthError("Email must be 254 characters or less.");
         return;
     }
 
@@ -700,14 +876,13 @@ async function logIntoAccount(username, password) {
     }
 
     const { data, error } = await supabaseClient.auth.signInWithPassword({
-        email: usernameToEmail(cleanUsername),
+        email: cleanEmail,
         password
     });
 
     if (error || !data.session) {
         console.error("Supabase login failed:", {
-            username: cleanUsername,
-            email: usernameToEmail(cleanUsername),
+            email: cleanEmail,
             error
         });
         showAuthError(mapSupabaseAuthError(error, "Login failed."));
@@ -715,7 +890,6 @@ async function logIntoAccount(username, password) {
     }
 
     currentSession = data.session;
-    await syncSessionProfile(data.session, { markLogin: true, source: "login" });
     closeLoginPopup();
     clearAuthInputs();
     clearAuthError();
@@ -723,15 +897,15 @@ async function logIntoAccount(username, password) {
 }
 
 async function submitLogin() {
-    const usernameInput = document.getElementById("username");
+    const emailInput = document.getElementById("username");
     const passwordInput = document.getElementById("password");
-    const username = usernameInput ? usernameInput.value.trim() : "";
+    const email = emailInput ? emailInput.value.trim() : "";
     const password = passwordInput ? passwordInput.value : "";
 
     if (authMode === "signup") {
-        await createAccount(username, password);
+        await createAccount(email, password);
     } else {
-        await logIntoAccount(username, password);
+        await logIntoAccount(email, password);
     }
 }
 
@@ -759,8 +933,16 @@ async function handleAuthSessionChanged(session, options = {}) {
     cleanupLegacyAuthStorage();
 
     if (currentSession) {
-        await syncSessionProfile(currentSession, {
-            markLogin: Boolean(options.markLogin),
+        await ensureHomeMenuBoxesLoaded({
+            notify: options.notify !== false,
+            session: currentSession,
+            source: options.source || "auth"
+        });
+        subscribeToRemoteHomeMenuBoxes(currentSession);
+    } else {
+        unsubscribeHomeMenuBoxesRealtime();
+        setHomeMenuBoxesCache([], {
+            notify: options.notify !== false,
             source: options.source || "auth"
         });
     }
@@ -831,6 +1013,4 @@ runWhenDomReady(() => {
     initializeAuthUi().catch((error) => {
         console.error("Auth initialization failed:", error);
     });
-    ensureHomeMenuBoxesLoaded();
-    subscribeToRemoteHomeMenuBoxes();
 });

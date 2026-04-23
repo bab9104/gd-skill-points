@@ -53,15 +53,15 @@ const supabaseClient = supabase.createClient(
             <h2>Log In</h2>
             <p class="auth-popup-text">Log in or create an account to save your progress.</p>
             <div class="auth-field">
-                <label for="username">Username</label>
-                <input id="username" type="text" placeholder="Username">
+                <label for="username">Email</label>
+                <input id="username" type="email" placeholder="Email">
             </div>
             <div class="auth-field">
                 <label for="password">Password</label>
                 <input id="password" type="password" placeholder="Password">
             </div>
             <button class="auth-button auth-full" onclick="submitLogin()">Submit</button>
-            <div class="auth-error" id="errorText">Wrong username or password.</div>
+            <div class="auth-error" id="errorText">Wrong email or password.</div>
         </div>
     </div>
 
@@ -102,10 +102,6 @@ const supabaseClient = supabase.createClient(
     </div>
 
     <script>
-        function getHomeMenuBoxes() {
-            return JSON.parse(localStorage.getItem("gdHomeMenuBoxes")) || [];
-        }
-
         function renderHomeMenuBoxes() {
             const menuBoardShell = document.getElementById("menuBoardShell");
             const menuGrid = document.getElementById("menuGrid");
@@ -113,7 +109,7 @@ const supabaseClient = supabase.createClient(
                 return;
             }
 
-            const items = window.gdAppState ? gdAppState.getHomeMenuBoxes() : getHomeMenuBoxes();
+            const items = window.gdAppState ? gdAppState.getHomeMenuBoxes() : [];
 
             menuGrid.innerHTML = "";
             menuBoardShell.classList.toggle("open", items.length > 0);

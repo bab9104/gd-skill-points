@@ -35,7 +35,7 @@
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js"></script>
 <body>
     <div class="auth-top-right"><button class="auth-button" id="loginButton" onclick="openLoginPopup()">Log In</button><div class="auth-info" id="loginInfo"><div class="auth-name" id="loginName">Guest</div><div class="auth-role" id="loginRole">user</div><button class="auth-button" onclick="openAccountPopup()">Log Out</button></div></div>
-    <div class="auth-overlay" id="loginOverlay"><div class="auth-popup"><div class="auth-close-row"><button class="auth-close-button" onclick="closeLoginPopup()">X</button></div><h2>Log In</h2><p class="auth-popup-text">Log in with an admin account to manage challenges.</p><div class="auth-field"><label for="username">Username</label><input id="username" type="text" placeholder="Username"></div><div class="auth-field"><label for="password">Password</label><input id="password" type="password" placeholder="Password"></div><button class="auth-button auth-full" onclick="submitLogin()">Submit</button><div class="auth-error" id="errorText">Wrong username or password.</div></div></div>
+    <div class="auth-overlay" id="loginOverlay"><div class="auth-popup"><div class="auth-close-row"><button class="auth-close-button" onclick="closeLoginPopup()">X</button></div><h2>Log In</h2><p class="auth-popup-text">Log in with an admin account to manage challenges.</p><div class="auth-field"><label for="username">Email</label><input id="username" type="email" placeholder="Email"></div><div class="auth-field"><label for="password">Password</label><input id="password" type="password" placeholder="Password"></div><button class="auth-button auth-full" onclick="submitLogin()">Submit</button><div class="auth-error" id="errorText">Wrong email or password.</div></div></div>
     <div class="auth-overlay" id="accountOverlay"><div class="auth-popup"><div class="auth-close-row"><button class="auth-close-button" onclick="closeAccountPopup()">X</button></div><h2>Account</h2><div class="auth-panel-top"><div class="auth-name" id="panelName">Guest</div><div class="auth-role" id="panelRole">user</div></div><p class="auth-popup-text">This can hold more account buttons later. For now, the button below logs you out.</p><button class="auth-panel-button auth-full" onclick="logOut()">Log Out</button></div></div>
 
         <div class="page">
@@ -60,17 +60,45 @@
         const challengeDescription = document.getElementById("challengeDescription");
         const addChallengeButton = document.getElementById("addChallengeButton");
         let editingIndex = null;
-        const defaultChallenges = [
-            { name: "Easy Rush", description: "Beat 10 easy levels in one playing session." },
-            { name: "Demon Climber", description: "Beat 2 easy demons and 1 medium demon." },
-            { name: "Wave Master", description: "Beat a level with a hard wave section or a wave-focused demon." },
-            { name: "Top Player Push", description: "Beat 1 extreme demon or finish a top 150 demonlist level." },
-            { name: "Consistency Test", description: "Beat 5 harder levels and 3 insane levels." },
-            { name: "Mini Demon Run", description: "Beat any 3 demons in one day." }
-        ];
-        let challenges = JSON.parse(localStorage.getItem("gdChallenges")) || defaultChallenges;
+        const removedDefaultChallengeKeys = new Set([
+            "Easy Rush::Beat 10 easy levels in one playing session.",
+            "Demon Climber::Beat 2 easy demons and 1 medium demon.",
+            "Wave Master::Beat a level with a hard wave section or a wave-focused demon.",
+            "Top Player Push::Beat 1 extreme demon or finish a top 150 demonlist level.",
+            "Consistency Test::Beat 5 harder levels and 3 insane levels.",
+            "Mini Demon Run::Beat any 3 demons in one day."
+        ]);
+
+        function challengeStorageKey(challenge) {
+            const name = String(challenge && challenge.name || "").trim();
+            const description = String(challenge && challenge.description || "").trim();
+            return `${name}::${description}`;
+        }
+
+        function loadChallenges() {
+            const storedValue = localStorage.getItem("gdChallenges");
+            let parsed = [];
+
+            try {
+                parsed = storedValue ? JSON.parse(storedValue) : [];
+            } catch (error) {
+                console.warn("Failed to parse saved challenges. Resetting challenge list.", error);
+                parsed = [];
+            }
+
+            const normalized = Array.isArray(parsed)
+                ? parsed.filter((challenge) => challenge && challenge.name && !removedDefaultChallengeKeys.has(challengeStorageKey(challenge)))
+                : [];
+
+            if (!storedValue || normalized.length !== parsed.length) {
+                localStorage.setItem("gdChallenges", JSON.stringify(normalized));
+            }
+
+            return normalized;
+        }
+
+        let challenges = loadChallenges();
         function saveChallenges() { localStorage.setItem("gdChallenges", JSON.stringify(challenges)); }
-        if (!localStorage.getItem("gdChallenges")) { saveChallenges(); }
         function updatePageForAuth() {
             const admin = isAdminLoggedIn();
             addChallengeButton.style.display = admin ? "inline-block" : "none";

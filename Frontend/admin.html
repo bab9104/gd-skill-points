@@ -22,19 +22,12 @@
         .account-board { max-height: 420px; overflow-y: auto; padding-right: 8px; }
         .queue-list { display: grid; gap: 16px; }
         .account-list { display: grid; gap: 16px; }
-        .account-card { padding: 18px; background: rgba(255, 255, 255, 0.04); border-left: 5px solid #ff4d4d; border-radius: 12px; cursor: pointer; transition: border-color 0.2s, box-shadow 0.2s, background 0.2s; }
+        .account-card { padding: 18px; background: rgba(255, 255, 255, 0.04); border-left: 5px solid #ff4d4d; border-radius: 12px; transition: border-color 0.2s, box-shadow 0.2s, background 0.2s; }
         .account-card:hover { background: rgba(255, 255, 255, 0.06); box-shadow: 0 0 20px rgba(255, 77, 77, 0.12); }
-        .account-card.open { border-left-color: #ff9f9f; box-shadow: 0 0 24px rgba(255, 77, 77, 0.18); }
         .account-head { display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 10px; }
         .account-name { font-size: 24px; color: #ffd1d1; font-weight: bold; }
         .account-role { color: #ff9f9f; font-weight: bold; }
         .account-meta { color: #ffd0d0; line-height: 1.6; margin-bottom: 12px; }
-        .points-line { color: #fff3f3; font-weight: bold; margin-bottom: 12px; }
-        .account-points-panel { display: grid; gap: 10px; margin-top: 8px; }
-        .points-controls { display: flex; gap: 10px; flex-wrap: wrap; }
-        .points-input { width: 180px; max-width: 100%; padding: 11px 12px; border: 1px solid #8a2b2b; border-radius: 8px; background: #140606; color: white; font: inherit; box-sizing: border-box; }
-        .password-box { padding: 10px 12px; margin-bottom: 12px; background: rgba(0, 0, 0, 0.18); border-radius: 8px; color: #ffe1e1; }
-        .hidden-password { color: #ffbdbd; }
         .submission-card { padding: 18px; background: rgba(255, 255, 255, 0.04); border-left: 5px solid #ff4d4d; border-radius: 12px; }
         .submission-head { display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 12px; }
         .submission-name { font-size: 24px; color: #ffd1d1; font-weight: bold; }
@@ -63,7 +56,7 @@
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js"></script>
 <body>
     <div class="auth-top-right"><button class="auth-button" id="loginButton" onclick="openLoginPopup()">Log In</button><div class="auth-info" id="loginInfo"><div class="auth-name" id="loginName">Guest</div><div class="auth-role" id="loginRole">user</div><button class="auth-button" onclick="openAccountPopup()">Log Out</button></div></div>
-    <div class="auth-overlay" id="loginOverlay"><div class="auth-popup"><div class="auth-close-row"><button class="auth-close-button" onclick="closeLoginPopup()">X</button></div><h2>Log In</h2><p class="auth-popup-text">Log in with an account that has the admin role to manage this page.</p><div class="auth-field"><label for="username">Username</label><input id="username" type="text" placeholder="Username"></div><div class="auth-field"><label for="password">Password</label><input id="password" type="password" placeholder="Password"></div><button class="auth-button auth-full" onclick="submitLogin()">Submit</button><div class="auth-error" id="errorText">Wrong username or password.</div></div></div>
+    <div class="auth-overlay" id="loginOverlay"><div class="auth-popup"><div class="auth-close-row"><button class="auth-close-button" onclick="closeLoginPopup()">X</button></div><h2>Log In</h2><p class="auth-popup-text">Log in with an account that has the admin role to manage this page.</p><div class="auth-field"><label for="username">Email</label><input id="username" type="email" placeholder="Email"></div><div class="auth-field"><label for="password">Password</label><input id="password" type="password" placeholder="Password"></div><button class="auth-button auth-full" onclick="submitLogin()">Submit</button><div class="auth-error" id="errorText">Wrong email or password.</div></div></div>
     <div class="auth-overlay" id="accountOverlay"><div class="auth-popup"><div class="auth-close-row"><button class="auth-close-button" onclick="closeAccountPopup()">X</button></div><h2>Account</h2><div class="auth-panel-top"><div class="auth-name" id="panelName">Guest</div><div class="auth-role" id="panelRole">user</div></div><p class="auth-popup-text">This can hold more account buttons later. For now, the button below logs you out.</p><button class="auth-panel-button auth-full" onclick="logOut()">Log Out</button></div></div>
 
     <div class="page">
@@ -117,7 +110,6 @@
         const homeBoxList = document.getElementById("homeBoxList");
         const homeBoxTitle = document.getElementById("homeBoxTitle");
         const homeBoxDescription = document.getElementById("homeBoxDescription");
-        let openAccountUsername = "";
         let activeAdminTab = "queue";
 
         function setAdminTab(tabName) {
@@ -142,118 +134,63 @@
             return JSON.parse(localStorage.getItem("scores")) || [];
         }
 
-        function getHomeMenuBoxes() {
-            return JSON.parse(localStorage.getItem("gdHomeMenuBoxes")) || [];
-        }
-
-        function saveHomeMenuBoxes(items) {
-            localStorage.setItem("gdHomeMenuBoxes", JSON.stringify(items));
-        }
-
         async function renderAccounts() {
             accountList.innerHTML = "";
 
             if (!isAdminLoggedIn()) {
-                accountList.innerHTML = '<div class="empty-box">Log in with an admin account to view saved accounts.</div>';
+                accountList.innerHTML = '<div class="empty-box">Log in with an admin account to view Supabase accounts.</div>';
                 return;
             }
 
-            const accounts = await getAccounts();
+            let accounts = [];
+            try {
+                if (!window.gdAppState || typeof gdAppState.getSupabaseAccounts !== "function") {
+                    throw new Error("Supabase account loading is not available on this page.");
+                }
+
+                accounts = await gdAppState.getSupabaseAccounts();
+            } catch (error) {
+                console.error("Failed to load Supabase accounts:", error);
+                accountList.innerHTML = '<div class="empty-box">Could not load Supabase accounts right now.</div>';
+                return;
+            }
+
             const searchText = accountSearch.value.trim().toLowerCase();
             const filteredAccounts = accounts.filter((account) => {
                 if (!searchText) return true;
-                return account.username.toLowerCase().includes(searchText) || String(account.role || "").toLowerCase().includes(searchText);
+                return account.username.toLowerCase().includes(searchText)
+                    || account.email.toLowerCase().includes(searchText)
+                    || String(account.role || "").toLowerCase().includes(searchText);
             });
 
             if (filteredAccounts.length === 0) {
-                accountList.innerHTML = `<div class="empty-box">${searchText ? "No matching accounts found." : "No saved accounts yet."}</div>`;
+                accountList.innerHTML = `<div class="empty-box">${searchText ? "No matching Supabase accounts found." : "No Supabase accounts yet."}</div>`;
                 return;
             }
 
             filteredAccounts.forEach((account) => {
-                const isAdmin = String(account.role || "").toLowerCase() === "admin";
-                const isCurrent = authLoggedInUsername() === account.username && isLoggedIn();
                 const card = document.createElement("div");
                 const head = document.createElement("div");
                 const name = document.createElement("div");
                 const role = document.createElement("div");
                 const meta = document.createElement("div");
-                const pointsLine = document.createElement("div");
-                const actions = document.createElement("div");
 
                 card.className = "account-card";
-                if (openAccountUsername === account.username) {
-                    card.classList.add("open");
-                }
                 head.className = "account-head";
                 name.className = "account-name";
                 role.className = "account-role";
                 meta.className = "account-meta";
-                pointsLine.className = "points-line";
-                actions.className = "submission-actions";
 
                 name.textContent = account.username;
                 role.textContent = account.role;
-                meta.innerHTML = `Created: ${escapeHtml(account.createdAt || "Unknown")}<br>Last Login: ${escapeHtml(account.lastLogin || "Never")}<br>Status: ${isCurrent ? "Currently logged in" : "Saved account"}`;
-                pointsLine.textContent = `Points: ${Number(account.points) || 0}`;
-                card.onclick = () => toggleAccountPanel(account.username);
+                meta.innerHTML = `Email: ${escapeHtml(account.email || "Unknown")}<br>Created: ${escapeHtml(account.createdAt || "Unknown")}<br>Last Login: ${escapeHtml(account.lastLogin || "Never")}`;
 
                 head.appendChild(name);
                 head.appendChild(role);
-
-                if (!isAdmin) {
-                    const deleteButton = document.createElement("button");
-                    deleteButton.className = "action-button reject-button";
-                    deleteButton.textContent = "Delete Account";
-                    deleteButton.onclick = (event) => {
-                        event.stopPropagation();
-                        deleteAccount(account.username);
-                    };
-                    actions.appendChild(deleteButton);
-                }
-
                 card.appendChild(head);
                 card.appendChild(meta);
-                card.appendChild(pointsLine);
-                if (openAccountUsername === account.username) {
-                    const panel = document.createElement("div");
-                    const note = document.createElement("div");
-                    const controls = document.createElement("div");
-                    const input = document.createElement("input");
-                    const addButton = document.createElement("button");
-
-                    panel.className = "account-points-panel";
-                    note.className = "submission-note";
-                    controls.className = "points-controls";
-                    input.className = "points-input";
-                    addButton.className = "action-button approve-button";
-
-                    note.textContent = `Add points to ${account.username}`;
-                    input.type = "number";
-                    input.min = "1";
-                    input.step = "1";
-                    input.placeholder = "Add points";
-                    input.onclick = (event) => event.stopPropagation();
-                    addButton.textContent = "Add Points";
-                    addButton.onclick = (event) => {
-                        event.stopPropagation();
-                        addPointsToAccount(account.username, input.value);
-                    };
-
-                    controls.appendChild(input);
-                    controls.appendChild(addButton);
-                    panel.appendChild(note);
-                    panel.appendChild(controls);
-                    card.appendChild(panel);
-                }
-                card.appendChild(actions);
                 accountList.appendChild(card);
             });
-        }
-
-        function toggleAccountPanel(username) {
-            openAccountUsername = openAccountUsername === username ? "" : username;
-            renderAccounts();
         }
 
         function renderHomeBoxes() {
@@ -264,13 +201,13 @@
                 return;
             }
 
-            const items = window.gdAppState ? gdAppState.getHomeMenuBoxes() : getHomeMenuBoxes();
+            const items = window.gdAppState ? gdAppState.getHomeMenuBoxes() : [];
             if (items.length === 0) {
                 homeBoxList.innerHTML = '<div class="empty-box">No boxes yet.</div>';
                 return;
             }
 
-            items.forEach((item, index) => {
+            items.forEach((item) => {
                 const card = document.createElement("div");
                 const text = document.createElement("div");
                 const title = document.createElement("div");
@@ -292,7 +229,7 @@
                     text.appendChild(description);
                 }
                 deleteButton.textContent = "Delete";
-                deleteButton.onclick = () => deleteHomeBox(index);
+                deleteButton.onclick = () => deleteHomeBox(item.id);
 
                 actions.appendChild(deleteButton);
                 card.appendChild(text);
@@ -301,70 +238,45 @@
             });
         }
 
-        async function deleteAccount(username) {
-            if (!isAdminLoggedIn()) return;
-            const accounts = await getAccounts();
-            const targetAccount = accounts.find((account) => account.username === username);
-            if (targetAccount && String(targetAccount.role || "").toLowerCase() === "admin") return;
-
-            const keptAccounts = accounts.filter((account) => account.username !== username);
-            saveAccounts(keptAccounts);
-            if (openAccountUsername === username) {
-                openAccountUsername = "";
-            }
-            renderAccounts();
-        }
-
-        async function addPointsToAccount(username, value) {
-            if (!isAdminLoggedIn()) return;
-
-            const amount = Math.floor(Number(value));
-            if (!Number.isFinite(amount) || amount <= 0) {
-                alert("Type a point amount bigger than 0.");
-                return;
-            }
-
-            const accounts = await getAccounts();
-            const updatedAccounts = accounts.map((account) => {
-                if (account.username !== username) {
-                    return account;
-                }
-
-                return {
-                    ...account,
-                    points: (Number(account.points) || 0) + amount
-                };
-            });
-
-            saveAccounts(updatedAccounts);
-            renderAccounts();
-        }
-
-        function addHomeBox() {
+        async function addHomeBox() {
             if (!isAdminLoggedIn()) return;
 
             const title = homeBoxTitle.value.trim();
-            const description = homeBoxDescription.value.trim();
+            const content = homeBoxDescription.value.trim();
             if (!title) {
                 alert("Type a title for the box first.");
                 return;
             }
 
-            const items = window.gdAppState ? gdAppState.getHomeMenuBoxes() : getHomeMenuBoxes();
-            items.push({ title, description });
-            saveHomeMenuBoxes(items);
-            homeBoxTitle.value = "";
-            homeBoxDescription.value = "";
-            renderHomeBoxes();
+            try {
+                if (!window.gdAppState || typeof gdAppState.saveMenuBox !== "function") {
+                    throw new Error("Menu box saving is not available on this page.");
+                }
+
+                await gdAppState.saveMenuBox({ title, content });
+                homeBoxTitle.value = "";
+                homeBoxDescription.value = "";
+                renderHomeBoxes();
+            } catch (error) {
+                console.error("Failed to save menu box:", error);
+                alert("Could not save that menu box right now.");
+            }
         }
 
-        function deleteHomeBox(index) {
+        async function deleteHomeBox(id) {
             if (!isAdminLoggedIn()) return;
 
-            const items = window.gdAppState ? gdAppState.getHomeMenuBoxes() : getHomeMenuBoxes();
-            items.splice(index, 1);
-            saveHomeMenuBoxes(items);
-            renderHomeBoxes();
+            try {
+                if (!window.gdAppState || typeof gdAppState.deleteMenuBox !== "function") {
+                    throw new Error("Menu box deletion is not available on this page.");
+                }
+
+                await gdAppState.deleteMenuBox(id);
+                renderHomeBoxes();
+            } catch (error) {
+                console.error("Failed to delete menu box:", error);
+                alert("Could not delete that menu box right now.");
+            }
         }
 
         function renderQueue() {
@@ -478,7 +390,6 @@
             } else {
                 statusBox.innerHTML = "<strong>Status:</strong> Log in with an admin account to use admin access.";
                 accountSearch.value = "";
-                openAccountUsername = "";
                 homeBoxTitle.value = "";
                 homeBoxDescription.value = "";
             }
