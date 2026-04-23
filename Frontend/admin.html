@@ -62,16 +62,16 @@
 </head>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js"></script>
 <body>
-    <div class="auth-top-right"><button class="auth-button" id="loginButton" onclick="openLoginPopup()">Log In</button><div class="auth-info" id="loginInfo"><div class="auth-name" id="loginName">Bab9104</div><div class="auth-role" id="loginRole">Admin</div><button class="auth-button" onclick="openAccountPopup()">Log Out</button></div></div>
-    <div class="auth-overlay" id="loginOverlay"><div class="auth-popup"><div class="auth-close-row"><button class="auth-close-button" onclick="closeLoginPopup()">X</button></div><h2>Log In</h2><p class="auth-popup-text">Use the admin login for now.</p><div class="auth-field"><label for="username">Username</label><input id="username" type="text" placeholder="Username"></div><div class="auth-field"><label for="password">Password</label><input id="password" type="password" placeholder="Password"></div><button class="auth-button auth-full" onclick="submitLogin()">Submit</button><div class="auth-error" id="errorText">Wrong username or password.</div></div></div>
-    <div class="auth-overlay" id="accountOverlay"><div class="auth-popup"><div class="auth-close-row"><button class="auth-close-button" onclick="closeAccountPopup()">X</button></div><h2>Account</h2><div class="auth-panel-top"><div class="auth-name" id="panelName">Bab9104</div><div class="auth-role" id="panelRole">Admin</div></div><p class="auth-popup-text">This can hold more account buttons later. For now, the button below logs you out.</p><button class="auth-panel-button auth-full" onclick="logOut()">Log Out</button></div></div>
+    <div class="auth-top-right"><button class="auth-button" id="loginButton" onclick="openLoginPopup()">Log In</button><div class="auth-info" id="loginInfo"><div class="auth-name" id="loginName">Guest</div><div class="auth-role" id="loginRole">user</div><button class="auth-button" onclick="openAccountPopup()">Log Out</button></div></div>
+    <div class="auth-overlay" id="loginOverlay"><div class="auth-popup"><div class="auth-close-row"><button class="auth-close-button" onclick="closeLoginPopup()">X</button></div><h2>Log In</h2><p class="auth-popup-text">Log in with an account that has the admin role to manage this page.</p><div class="auth-field"><label for="username">Username</label><input id="username" type="text" placeholder="Username"></div><div class="auth-field"><label for="password">Password</label><input id="password" type="password" placeholder="Password"></div><button class="auth-button auth-full" onclick="submitLogin()">Submit</button><div class="auth-error" id="errorText">Wrong username or password.</div></div></div>
+    <div class="auth-overlay" id="accountOverlay"><div class="auth-popup"><div class="auth-close-row"><button class="auth-close-button" onclick="closeAccountPopup()">X</button></div><h2>Account</h2><div class="auth-panel-top"><div class="auth-name" id="panelName">Guest</div><div class="auth-role" id="panelRole">user</div></div><p class="auth-popup-text">This can hold more account buttons later. For now, the button below logs you out.</p><button class="auth-panel-button auth-full" onclick="logOut()">Log Out</button></div></div>
 
     <div class="page">
         <a class="top-link" href="index.html">Back to Home</a>
         <h1>Admin Page</h1>
         <p class="intro">Review submitted scores here before they go onto the leaderboard. If a submission looks realistic, you can approve it.</p>
         <div class="status-box" id="adminStatusBox">
-            <strong>Status:</strong> Log in as Bab9104 to use admin access.
+            <strong>Status:</strong> Log in with an admin account to use admin access.
         </div>
         <div class="admin-tabs auth-mode-switch">
             <button class="auth-mode-button active" id="queueTabButton" type="button" onclick="setAdminTab('queue')">Pending Scores</button>
@@ -154,7 +154,7 @@
             accountList.innerHTML = "";
 
             if (!isAdminLoggedIn()) {
-                accountList.innerHTML = '<div class="empty-box">Log in as Bab9104 to view saved accounts.</div>';
+                accountList.innerHTML = '<div class="empty-box">Log in with an admin account to view saved accounts.</div>';
                 return;
             }
 
@@ -171,7 +171,7 @@
             }
 
             filteredAccounts.forEach((account) => {
-                const isAdmin = account.role === ADMIN_ROLE;
+                const isAdmin = String(account.role || "").toLowerCase() === "admin";
                 const isCurrent = authLoggedInUsername() === account.username && isLoggedIn();
                 const card = document.createElement("div");
                 const head = document.createElement("div");
@@ -260,11 +260,11 @@
             homeBoxList.innerHTML = "";
 
             if (!isAdminLoggedIn()) {
-                homeBoxList.innerHTML = '<div class="empty-box">Log in as Bab9104 to manage main menu boxes.</div>';
+                homeBoxList.innerHTML = '<div class="empty-box">Log in with an admin account to manage main menu boxes.</div>';
                 return;
             }
 
-            const items = getHomeMenuBoxes();
+            const items = window.gdAppState ? gdAppState.getHomeMenuBoxes() : getHomeMenuBoxes();
             if (items.length === 0) {
                 homeBoxList.innerHTML = '<div class="empty-box">No boxes yet.</div>';
                 return;
@@ -303,9 +303,11 @@
 
         async function deleteAccount(username) {
             if (!isAdminLoggedIn()) return;
-            if (username === ADMIN_USERNAME) return;
+            const accounts = await getAccounts();
+            const targetAccount = accounts.find((account) => account.username === username);
+            if (targetAccount && String(targetAccount.role || "").toLowerCase() === "admin") return;
 
-            const keptAccounts = (await getAccounts()).filter((account) => account.username !== username);
+            const keptAccounts = accounts.filter((account) => account.username !== username);
             saveAccounts(keptAccounts);
             if (openAccountUsername === username) {
                 openAccountUsername = "";
@@ -348,7 +350,7 @@
                 return;
             }
 
-            const items = getHomeMenuBoxes();
+            const items = window.gdAppState ? gdAppState.getHomeMenuBoxes() : getHomeMenuBoxes();
             items.push({ title, description });
             saveHomeMenuBoxes(items);
             homeBoxTitle.value = "";
@@ -359,7 +361,7 @@
         function deleteHomeBox(index) {
             if (!isAdminLoggedIn()) return;
 
-            const items = getHomeMenuBoxes();
+            const items = window.gdAppState ? gdAppState.getHomeMenuBoxes() : getHomeMenuBoxes();
             items.splice(index, 1);
             saveHomeMenuBoxes(items);
             renderHomeBoxes();
@@ -370,7 +372,7 @@
             queueList.innerHTML = "";
 
             if (!isAdminLoggedIn()) {
-                queueList.innerHTML = '<div class="empty-box">Log in as Bab9104 to review pending scores.</div>';
+                queueList.innerHTML = '<div class="empty-box">Log in with an admin account to review pending scores.</div>';
                 return;
             }
 
@@ -474,7 +476,7 @@
             if (isAdminLoggedIn()) {
                 statusBox.innerHTML = "<strong>Status:</strong> Admin access enabled.";
             } else {
-                statusBox.innerHTML = "<strong>Status:</strong> Log in as Bab9104 to use admin access.";
+                statusBox.innerHTML = "<strong>Status:</strong> Log in with an admin account to use admin access.";
                 accountSearch.value = "";
                 openAccountUsername = "";
                 homeBoxTitle.value = "";
@@ -486,9 +488,15 @@
             setAdminTab(activeAdminTab);
         }
 
-document.addEventListener("DOMContentLoaded", async () => {
-    await updatePageForAuth();
-});
+        document.addEventListener("DOMContentLoaded", async () => {
+            if (window.gdAppState) {
+                gdAppState.onChange(["accounts"], () => { renderAccounts(); });
+                gdAppState.onChange(["pendingScores"], () => { renderQueue(); });
+                gdAppState.onChange(["homeMenuBoxes"], () => { renderHomeBoxes(); });
+            }
+
+            await updatePageForAuth();
+        });
 
     </script>
     <script src="auth.js"></script>

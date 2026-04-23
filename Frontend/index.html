@@ -39,8 +39,8 @@ const supabaseClient = supabase.createClient(
     <div class="auth-top-right">
         <button class="auth-button" id="loginButton" onclick="openLoginPopup()">Log In</button>
         <div class="auth-info" id="loginInfo">
-            <div class="auth-name" id="loginName">Bab9104</div>
-            <div class="auth-role" id="loginRole">Admin</div>
+            <div class="auth-name" id="loginName">Guest</div>
+            <div class="auth-role" id="loginRole">user</div>
             <button class="auth-button" onclick="openAccountPopup()">Log Out</button>
         </div>
     </div>
@@ -51,7 +51,7 @@ const supabaseClient = supabase.createClient(
                 <button class="auth-close-button" onclick="closeLoginPopup()">X</button>
             </div>
             <h2>Log In</h2>
-            <p class="auth-popup-text">Use the admin login for now. You can change it later.</p>
+            <p class="auth-popup-text">Log in or create an account to save your progress.</p>
             <div class="auth-field">
                 <label for="username">Username</label>
                 <input id="username" type="text" placeholder="Username">
@@ -72,8 +72,8 @@ const supabaseClient = supabase.createClient(
             </div>
             <h2>Account</h2>
             <div class="auth-panel-top">
-                <div class="auth-name" id="panelName">Bab9104</div>
-                <div class="auth-role" id="panelRole">Admin</div>
+                <div class="auth-name" id="panelName">Guest</div>
+                <div class="auth-role" id="panelRole">user</div>
             </div>
             <p class="auth-popup-text">This can hold more account buttons later. For now, the button below logs you out.</p>
             <button class="auth-panel-button auth-full" onclick="logOut()">Log Out</button>
@@ -109,7 +109,11 @@ const supabaseClient = supabase.createClient(
         function renderHomeMenuBoxes() {
             const menuBoardShell = document.getElementById("menuBoardShell");
             const menuGrid = document.getElementById("menuGrid");
-            const items = getHomeMenuBoxes();
+            if (!menuBoardShell || !menuGrid) {
+                return;
+            }
+
+            const items = window.gdAppState ? gdAppState.getHomeMenuBoxes() : getHomeMenuBoxes();
 
             menuGrid.innerHTML = "";
             menuBoardShell.classList.toggle("open", items.length > 0);
@@ -133,14 +137,22 @@ const supabaseClient = supabase.createClient(
         }
 
         function updatePageForAuth() {
-    renderHomeMenuBoxes();
-}
+            const adminPageLink = document.getElementById("adminPageLink");
+            if (adminPageLink) {
+                adminPageLink.style.display = isAdminLoggedIn() ? "inline-block" : "none";
+            }
 
-        renderHomeMenuBoxes();
+            renderHomeMenuBoxes();
+        }
 
-document.addEventListener("DOMContentLoaded", () => {
-    renderHomeMenuBoxes();
-});
+        document.addEventListener("DOMContentLoaded", () => {
+            renderHomeMenuBoxes();
+            if (window.gdAppState) {
+                gdAppState.onChange(["homeMenuBoxes"], () => {
+                    renderHomeMenuBoxes();
+                });
+            }
+        });
 
     </script>
     <script src="auth.js"></script>

@@ -23,53 +23,67 @@
 </head>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js"></script>
 <body>
-    <div class="auth-top-right"><button class="auth-button" id="loginButton" onclick="openLoginPopup()">Log In</button><div class="auth-info" id="loginInfo"><div class="auth-name" id="loginName">Bab9104</div><div class="auth-role" id="loginRole">Admin</div><button class="auth-button" onclick="openAccountPopup()">Log Out</button></div></div>
-    <div class="auth-overlay" id="loginOverlay"><div class="auth-popup"><div class="auth-close-row"><button class="auth-close-button" onclick="closeLoginPopup()">X</button></div><h2>Log In</h2><p class="auth-popup-text">Use the admin login for now.</p><div class="auth-field"><label for="username">Username</label><input id="username" type="text" placeholder="Username"></div><div class="auth-field"><label for="password">Password</label><input id="password" type="password" placeholder="Password"></div><button class="auth-button auth-full" onclick="submitLogin()">Submit</button><div class="auth-error" id="errorText">Wrong username or password.</div></div></div>
-    <div class="auth-overlay" id="accountOverlay"><div class="auth-popup"><div class="auth-close-row"><button class="auth-close-button" onclick="closeAccountPopup()">X</button></div><h2>Account</h2><div class="auth-panel-top"><div class="auth-name" id="panelName">Bab9104</div><div class="auth-role" id="panelRole">Admin</div></div><p class="auth-popup-text">This can hold more account buttons later. For now, the button below logs you out.</p><button class="auth-panel-button auth-full" onclick="logOut()">Log Out</button></div></div>
+    <div class="auth-top-right"><button class="auth-button" id="loginButton" onclick="openLoginPopup()">Log In</button><div class="auth-info" id="loginInfo"><div class="auth-name" id="loginName">Guest</div><div class="auth-role" id="loginRole">user</div><button class="auth-button" onclick="openAccountPopup()">Log Out</button></div></div>
+    <div class="auth-overlay" id="loginOverlay"><div class="auth-popup"><div class="auth-close-row"><button class="auth-close-button" onclick="closeLoginPopup()">X</button></div><h2>Log In</h2><p class="auth-popup-text">Log in to view your account and admin tools.</p><div class="auth-field"><label for="username">Username</label><input id="username" type="text" placeholder="Username"></div><div class="auth-field"><label for="password">Password</label><input id="password" type="password" placeholder="Password"></div><button class="auth-button auth-full" onclick="submitLogin()">Submit</button><div class="auth-error" id="errorText">Wrong username or password.</div></div></div>
+    <div class="auth-overlay" id="accountOverlay"><div class="auth-popup"><div class="auth-close-row"><button class="auth-close-button" onclick="closeAccountPopup()">X</button></div><h2>Account</h2><div class="auth-panel-top"><div class="auth-name" id="panelName">Guest</div><div class="auth-role" id="panelRole">user</div></div><p class="auth-popup-text">This can hold more account buttons later. For now, the button below logs you out.</p><button class="auth-panel-button auth-full" onclick="logOut()">Log Out</button></div></div>
 
     <div class="panel"><h1>Leaderboard</h1><div class="top-bar"><a class="button-link home-link" href="index.html">Back to Home</a><button class="danger" id="deleteAllButton" onclick="deleteAll()">Delete All Scores</button></div><div id="list"></div></div>
 
     <script>
         function leaderboardAdminEnabled() {
-            return localStorage.getItem("gdLoggedIn") === "true" && localStorage.getItem("gdUsername") === "Bab9104";
+            return isAdminLoggedIn();
         }
+
         const list = document.getElementById("list");
         const deleteAllButton = document.getElementById("deleteAllButton");
-        function getLeaderboardAccounts() {
-            return (JSON.parse(localStorage.getItem("gdAccounts")) || [])
+
+        async function getLeaderboardAccounts() {
+            return (await getAccounts())
                 .filter((account) => account && account.username)
                 .map((account) => ({
                     username: account.username,
                     points: Math.max(0, Math.floor(Number(account.points) || 0))
                 }));
         }
+
         function saveLeaderboardAccounts(items) {
-            localStorage.setItem("gdAccounts", JSON.stringify(items));
+            saveAccounts(items);
         }
+
         async function deleteScore(username) {
             if (!leaderboardAdminEnabled()) return;
-            const accounts = JSON.parse(localStorage.getItem("gdAccounts")) || [];
+
+            const accounts = await getAccounts();
             const updatedAccounts = accounts.map((account) => {
                 if (account.username !== username) return account;
                 return { ...account, points: 0 };
             });
+
             saveLeaderboardAccounts(updatedAccounts);
             render();
         }
+
         async function deleteAll() {
             if (!leaderboardAdminEnabled()) return;
             if (!confirm("Reset every player's points to 0?")) return;
-            const accounts = JSON.parse(localStorage.getItem("gdAccounts")) || [];
+
+            const accounts = await getAccounts();
             const updatedAccounts = accounts.map((account) => ({ ...account, points: 0 }));
             saveLeaderboardAccounts(updatedAccounts);
             render();
         }
+
         async function render() {
+            if (!list || !deleteAllButton) return;
+
             list.innerHTML = "";
             deleteAllButton.style.display = leaderboardAdminEnabled() ? "inline-block" : "none";
 
-            const sortedScores = getLeaderboardAccounts().sort((a, b) => b.points - a.points);
-            if (sortedScores.length === 0) { list.innerHTML = '<p class="empty">No scores yet.</p>'; return; }
+            const sortedScores = (await getLeaderboardAccounts()).sort((a, b) => b.points - a.points);
+            if (sortedScores.length === 0) {
+                list.innerHTML = '<p class="empty">No scores yet.</p>';
+                return;
+            }
 
             sortedScores.forEach((entry, index) => {
                 const card = document.createElement("div");
@@ -104,35 +118,19 @@
                 list.appendChild(card);
             });
         }
-        function updatePageForAuth() { render(); }
-        render();
 
-async function loadLeaderboard() {
-    try {
-        const res = await fetch("http://localhost:3000/api/leaderboard");
-        const data = await res.json();
+        function updatePageForAuth() {
+            render();
+        }
 
-        const container = document.getElementById("leaderboard");
-        container.innerHTML = "";
-
-        data.leaderboard.forEach((user, index) => {
-            const div = document.createElement("div");
-
-            div.innerHTML = `
-                <strong>#${index + 1} ${user.username}</strong>
-                — ${user.points} points
-            `;
-
-            container.appendChild(div);
+        document.addEventListener("DOMContentLoaded", () => {
+            render();
+            if (window.gdAppState) {
+                gdAppState.onChange(["accounts"], () => {
+                    render();
+                });
+            }
         });
-
-    } catch (err) {
-        console.error("Failed to load leaderboard:", err);
-    }
-}
-
-loadLeaderboard();
-
     </script>
     <script src="auth.js"></script>
 </body>

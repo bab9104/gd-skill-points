@@ -1,6 +1,5 @@
-const ADMIN_USERNAME = "Bab9104";
-const ADMIN_ROLE = "Admin";
-const PLAYER_ROLE = "Player";
+const ADMIN_ROLE = "admin";
+const USER_ROLE = "user";
 
 let authMode = "login";
 
@@ -144,11 +143,6 @@ function getCurrentUser(session = currentSession) {
     return session && session.user ? session.user : null;
 }
 
-function getSessionEmail(session = currentSession) {
-    const user = getCurrentUser(session);
-    return user && user.email ? String(user.email).toLowerCase() : "";
-}
-
 function getSessionUsername(session = currentSession) {
     const user = getCurrentUser(session);
     if (!user) {
@@ -162,21 +156,15 @@ function getSessionUsername(session = currentSession) {
 function getSessionRole(session = currentSession) {
     const user = getCurrentUser(session);
     if (!user) {
-        return PLAYER_ROLE;
+        return USER_ROLE;
     }
 
-    const email = getSessionEmail(session);
     const metadataRole = String(
-        (user.app_metadata && user.app_metadata.role)
-        || (user.user_metadata && user.user_metadata.role)
+        (user.user_metadata && user.user_metadata.role)
         || ""
-    ).trim();
+    ).trim().toLowerCase();
 
-    if (email === usernameToEmail(ADMIN_USERNAME) || metadataRole === ADMIN_ROLE) {
-        return ADMIN_ROLE;
-    }
-
-    return PLAYER_ROLE;
+    return metadataRole === ADMIN_ROLE ? ADMIN_ROLE : USER_ROLE;
 }
 
 function authLoggedInUsername() {
@@ -192,7 +180,7 @@ function isAdminLoggedIn() {
 }
 
 function currentRole() {
-    return isLoggedIn() ? getSessionRole() : PLAYER_ROLE;
+    return isLoggedIn() ? getSessionRole() : USER_ROLE;
 }
 
 function authDisplayName() {
@@ -229,9 +217,10 @@ function normalizeAccountProfile(account) {
         return null;
     }
 
+    const role = String(account && account.role || USER_ROLE).toLowerCase();
     return {
         username,
-        role: account && account.role ? account.role : PLAYER_ROLE,
+        role: role === ADMIN_ROLE ? ADMIN_ROLE : USER_ROLE,
         createdAt: account && account.createdAt ? account.createdAt : "Unknown",
         lastLogin: account && account.lastLogin ? account.lastLogin : "Never",
         points: Math.max(0, Math.floor(Number(account && account.points) || 0))
@@ -575,7 +564,7 @@ function prefillPlayerName(inputId) {
 async function updateLoginView() {
     const username = authLoggedInUsername();
     const role = currentRole();
-    const displayName = username || ADMIN_USERNAME;
+    const displayName = username || "Guest";
     const loginButton = document.getElementById("loginButton");
     const loginInfo = document.getElementById("loginInfo");
     const loginName = document.getElementById("loginName");
@@ -592,11 +581,11 @@ async function updateLoginView() {
     }
 
     if (loginRole) {
-        loginRole.innerText = isLoggedIn() ? role : ADMIN_ROLE;
+        loginRole.innerText = isLoggedIn() ? role : USER_ROLE;
     }
 
     if (panelRole) {
-        panelRole.innerText = isLoggedIn() ? role : ADMIN_ROLE;
+        panelRole.innerText = isLoggedIn() ? role : USER_ROLE;
     }
 
     if (loginButton) {
@@ -643,7 +632,8 @@ function createAuthPayload(username, password) {
         password,
         options: {
             data: {
-                username: cleanUsername
+                username: cleanUsername,
+                role: USER_ROLE
             }
         }
     };
