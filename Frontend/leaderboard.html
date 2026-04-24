@@ -32,6 +32,8 @@
 
     <script>
         const LEADERBOARD_TABLE = "leaderboard";
+        const PROFILES_TABLE = "profiles";
+        const LEADERBOARD_REFRESH_KEY = "gdLeaderboardRefresh";
         let list = null;
         let deleteAllButton = null;
         let leaderboardRows = [];
@@ -60,22 +62,23 @@
             );
         }
 
-        function normalizeLeaderboardRow(row) {
+        function normalizeLeaderboardRow(row, usernameByUserId = new Map()) {
             const points = Math.max(0, Math.floor(Number(
-                row && (row.points ?? row.score ?? row.total_points ?? 0)
+                row && (row.score ?? row.points ?? row.total_points ?? 0)
             ) || 0));
             const userId = String(row && (row.user_id ?? row.userId ?? "") || "").trim();
             const username = String(
-                row && (
+                usernameByUserId.get(userId)
+                || (row && (
                     row.username
                     ?? row.name
                     ?? row.player_name
                     ?? row.playerName
                     ?? row.display_name
                     ?? row.displayName
-                    ?? userId
-                    ?? "Unknown Player"
-                )
+                ))
+                || userId
+                || "Unknown Player"
             ).trim() || "Unknown Player";
 
             return {
@@ -93,20 +96,46 @@
                 return;
             }
 
-            const { data, error } = await supabaseClient
+            const scoresRequest = supabaseClient
                 .from(LEADERBOARD_TABLE)
-                .select("*")
-                .order("points", { ascending: false });
+                .select("user_id, score");
+            const profilesRequest = supabaseClient
+                .from(PROFILES_TABLE)
+                .select("id, username");
 
-            if (error) {
-                console.error("Failed to load leaderboard rows:", error);
+            const [{ data: scores, error: scoresError }, { data: profiles, error: profilesError }] = await Promise.all([
+                scoresRequest,
+                profilesRequest
+            ]);
+
+            if (scoresError) {
+                console.error("Failed to load leaderboard scores:", scoresError);
                 leaderboardRows = [];
                 leaderboardError = "Failed to load leaderboard.";
                 return;
             }
 
-            leaderboardRows = Array.isArray(data)
-                ? data.map(normalizeLeaderboardRow).filter((entry) => entry.userId)
+            if (profilesError) {
+                console.warn("Failed to load leaderboard usernames from profiles:", profilesError);
+            }
+
+            const usernameByUserId = new Map();
+            if (Array.isArray(profiles)) {
+                profiles.forEach((profile) => {
+                    const profileId = String(profile && profile.id || "").trim();
+                    if (!profileId) {
+                        return;
+                    }
+
+                    usernameByUserId.set(profileId, String(profile && profile.username || "").trim() || profileId);
+                });
+            }
+
+            leaderboardRows = Array.isArray(scores)
+                ? scores
+                    .map((row) => normalizeLeaderboardRow(row, usernameByUserId))
+                    .filter((entry) => entry.userId)
+                    .sort((a, b) => b.points - a.points)
                 : [];
             leaderboardError = "";
         }
@@ -260,6 +289,12 @@
             list = document.getElementById("list");
             deleteAllButton = document.getElementById("deleteAllButton");
             refreshLeaderboard();
+        });
+
+        window.addEventListener("storage", (event) => {
+            if (event.key === LEADERBOARD_REFRESH_KEY) {
+                refreshLeaderboard();
+            }
         });
     </script>
     <script src="auth.js"></script>
