@@ -59,19 +59,12 @@
                 return `user:${userId}`;
             }
 
-            const email = normalizeLeaderboardValue(row && row.email).toLowerCase();
-            if (email) {
-                return `email:${email}`;
-            }
-
-            const username = normalizeLeaderboardValue(row && row.username).toLowerCase();
-            if (username) {
-                return `username:${username}`;
-            }
-
-            const name = normalizeLeaderboardValue(row && row.name).toLowerCase();
-            if (name) {
-                return `name:${name}`;
+            const profile = row && row.profiles;
+            const profileUsername = Array.isArray(profile)
+                ? normalizeLeaderboardValue(profile[0] && profile[0].username).toLowerCase()
+                : normalizeLeaderboardValue(profile && profile.username).toLowerCase();
+            if (profileUsername) {
+                return `username:${profileUsername}`;
             }
 
             const id = normalizeLeaderboardValue(row && row.id);
@@ -80,10 +73,11 @@
 
         function normalizeLeaderboardRow(row) {
             const id = normalizeLeaderboardValue(row && row.id);
-            const email = normalizeLeaderboardValue(row && row.email);
-            const username = normalizeLeaderboardValue(row && row.username);
-            const name = normalizeLeaderboardValue(row && row.name);
-            const displayName = email || username || name || normalizeLeaderboardValue(row && (row.user_id || row.userId)) || "Unknown player";
+            const profile = row && row.profiles;
+            const profileUsername = Array.isArray(profile)
+                ? normalizeLeaderboardValue(profile[0] && profile[0].username)
+                : normalizeLeaderboardValue(profile && profile.username);
+            const displayName = profileUsername || normalizeLeaderboardValue(row && (row.user_id || row.userId)) || "Unknown player";
             const submittedAt = normalizeLeaderboardValue(
                 row && (row.submitted_at || row.submittedAt || row.created_at || row.createdAt || row.updated_at || row.updatedAt)
             );
@@ -192,7 +186,8 @@
             const requestToken = ++leaderboardRequestToken;
             const { data, error } = await supabaseClient
                 .from(LEADERBOARD_TABLE)
-                .select("*");
+                .select("id, user_id, score, created_at, profiles(username)")
+                .order("score", { ascending: false });
 
             if (requestToken !== leaderboardRequestToken) {
                 return;

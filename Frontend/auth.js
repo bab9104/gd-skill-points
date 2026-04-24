@@ -6,18 +6,17 @@ let authMode = "login";
 const AUTH_TEXT_LIMIT = 35;
 const SUPABASE_URL = "https://juezglucqtenahnhsvri.supabase.co";
 const SUPABASE_ANON_KEY = "sb_publishable_wvpNjf_yBYQyycCxFyGC3g_oOlXUytP";
+const SUPABASE_PROFILES_TABLE = "profiles";
 const SUPABASE_MENU_BOXES_TABLE = "menu_boxes";
 const GD_STATE_CHANGE_EVENT = "gd:statechange";
 const GD_STORAGE_KEYS = {
     accounts: "gdAccounts",
     pendingScores: "pendingScores",
-    scores: "scores",
     homeMenuBoxes: "gdHomeMenuBoxes"
 };
 const GD_ARRAY_KEYS = new Set([
     GD_STORAGE_KEYS.accounts,
     GD_STORAGE_KEYS.pendingScores,
-    GD_STORAGE_KEYS.scores,
     GD_STORAGE_KEYS.homeMenuBoxes
 ]);
 const LEGACY_AUTH_KEYS = ["gdLoggedIn", "gdUsername", "gdRole"];
@@ -147,7 +146,7 @@ function cleanupLegacyAuthStorage() {
 }
 
 function normalizeUsername(username) {
-    return String(username || "").trim();
+    return String(username || "").trim().toLowerCase();
 }
 
 function usernameToEmail(username) {
@@ -247,6 +246,40 @@ function normalizeAccountProfile(account) {
     };
 }
 
+async function ensureOwnProfile(options = {}) {
+    const supabaseClient = getSupabaseClient();
+    const session = options.session || currentSession;
+    const user = options.user || getCurrentUser(session);
+    if (!supabaseClient || !user) {
+        return null;
+    }
+
+    const username = normalizeUsername(
+        options.username
+        || (user.email ? user.email.split("@")[0] : "")
+    );
+    if (!username) {
+        return null;
+    }
+
+    const { data, error } = await supabaseClient
+        .from(SUPABASE_PROFILES_TABLE)
+        .upsert({
+            id: user.id,
+            username
+        }, {
+            onConflict: "id"
+        })
+        .select("id, username, created_at")
+        .single();
+
+    if (error) {
+        throw error;
+    }
+
+    return data;
+}
+
 async function getAccounts() {
     return readStoredArray(GD_STORAGE_KEYS.accounts)
         .map(normalizeAccountProfile)
@@ -267,14 +300,6 @@ function getPendingScores() {
 
 function savePendingScores(pendingScores, options = {}) {
     writeStoredArray(GD_STORAGE_KEYS.pendingScores, pendingScores, options);
-}
-
-function getApprovedScores() {
-    return readStoredArray(GD_STORAGE_KEYS.scores);
-}
-
-function saveApprovedScores(scores, options = {}) {
-    writeStoredArray(GD_STORAGE_KEYS.scores, scores, options);
 }
 
 function getHomeMenuBoxes() {
@@ -545,8 +570,6 @@ const gdAppState = {
     saveAccounts,
     getPendingScores,
     savePendingScores,
-    getApprovedScores,
-    saveApprovedScores,
     getHomeMenuBoxes,
     loadMenuBoxes,
     saveMenuBox,
@@ -817,6 +840,17 @@ async function createAccount(username, password) {
     }
 
     currentSession = data.session;
+    try {
+        await ensureOwnProfile({
+            session: data.session,
+            user: data.user || (data.session && data.session.user) || null,
+            username: cleanUsername
+        });
+    } catch (profileError) {
+        console.error("Failed to create Supabase profile:", profileError);
+        showAuthError("Account created, but the profile setup failed.");
+        return;
+    }
     closeLoginPopup();
     clearAuthInputs();
     clearAuthError();
@@ -903,6 +937,14 @@ async function handleAuthSessionChanged(session, options = {}) {
     cleanupLegacyAuthStorage();
 
     if (currentSession) {
+        try {
+            await ensureOwnProfile({
+                session: currentSession
+            });
+        } catch (profileError) {
+            console.error("Failed to ensure Supabase profile:", profileError);
+        }
+
         await ensureHomeMenuBoxesLoaded({
             notify: options.notify !== false,
             session: currentSession,

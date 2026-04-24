@@ -88,6 +88,7 @@
         const homeBoxTitle = document.getElementById("homeBoxTitle");
         const homeBoxDescription = document.getElementById("homeBoxDescription");
         let activeAdminTab = "queue";
+        const approvingSubmissionKeys = new Set();
 
         function setAdminTab(tabName) {
             activeAdminTab = tabName;
@@ -111,6 +112,39 @@
             }
 
             return window.supabaseClient || null;
+        }
+
+        async function findProfileIdForSubmission(entry) {
+            const supabaseClient = getAdminSupabaseClient();
+            if (!supabaseClient) {
+                throw new Error("Supabase is not available on this page.");
+            }
+
+            const directUserId = String(entry && (entry.user_id || entry.userId) || "").trim();
+            if (directUserId) {
+                return directUserId;
+            }
+
+            const username = String(entry && entry.name || "").trim().toLowerCase();
+            if (!username) {
+                throw new Error("That submission is missing a username.");
+            }
+
+            const { data, error } = await supabaseClient
+                .from("profiles")
+                .select("id")
+                .eq("username", username)
+                .maybeSingle();
+
+            if (error) {
+                throw error;
+            }
+
+            if (!data || !data.id) {
+                throw new Error("No profile exists for that username.");
+            }
+
+            return data.id;
         }
 
         function renderHomeBoxes() {
@@ -286,24 +320,39 @@
                 return;
             }
 
-            const payload = {
-                name: String(selected.name || "").trim(),
-                score: Math.max(0, Math.floor(Number(selected.score) || 0))
-            };
-
-            const { error } = await supabaseClient
-                .from(LEADERBOARD_TABLE)
-                .insert(payload);
-
-            if (error) {
-                console.error("Failed to approve score into Supabase leaderboard:", error);
-                alert("Could not save that score to the leaderboard.");
+            const submissionKey = String(selected && (selected.id || selected.user_id || selected.userId || `${selected.name}-${selected.submittedAt || index}`));
+            if (approvingSubmissionKeys.has(submissionKey)) {
                 return;
             }
 
-            pendingScores.splice(index, 1);
-            savePendingScores(pendingScores);
-            renderQueue();
+            approvingSubmissionKeys.add(submissionKey);
+
+            try {
+                const profileId = await findProfileIdForSubmission(selected);
+                const payload = {
+                    user_id: profileId,
+                    score: Math.max(0, Math.floor(Number(selected.score) || 0))
+                };
+
+                const { error } = await supabaseClient
+                    .from(LEADERBOARD_TABLE)
+                    .upsert(payload, {
+                        onConflict: "user_id"
+                    });
+
+                if (error) {
+                    throw error;
+                }
+
+                pendingScores.splice(index, 1);
+                savePendingScores(pendingScores);
+                renderQueue();
+            } catch (error) {
+                console.error("Failed to approve score into Supabase leaderboard:", error);
+                alert(error && error.message ? error.message : "Could not save that score to the leaderboard.");
+            } finally {
+                approvingSubmissionKeys.delete(submissionKey);
+            }
         }
 
         function rejectSubmission(index) {
