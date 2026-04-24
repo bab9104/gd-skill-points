@@ -146,6 +146,14 @@ function cleanupLegacyAuthStorage() {
     });
 }
 
+function normalizeUsername(username) {
+    return String(username || "").trim();
+}
+
+function usernameToEmail(username) {
+    return `${normalizeUsername(username).toLowerCase()}@gd.local`;
+}
+
 function normalizeEmail(email) {
     return String(email || "").trim().toLowerCase();
 }
@@ -163,6 +171,11 @@ function getSessionEmail(session = currentSession) {
     return normalizeEmail(user.email);
 }
 
+function getSessionUsername(session = currentSession) {
+    const email = getSessionEmail(session);
+    return email ? email.split("@")[0] : "";
+}
+
 function getSessionRole(session = currentSession) {
     const user = getCurrentUser(session);
     if (!user) {
@@ -174,8 +187,8 @@ function getSessionRole(session = currentSession) {
         : USER_ROLE;
 }
 
-function authLoggedInEmail() {
-    return getSessionEmail();
+function authLoggedInUsername() {
+    return getSessionUsername();
 }
 
 function isLoggedIn() {
@@ -191,7 +204,7 @@ function currentRole() {
 }
 
 function authDisplayName() {
-    return authLoggedInEmail();
+    return authLoggedInUsername();
 }
 
 function authErrorElement() {
@@ -215,7 +228,7 @@ function clearAuthError() {
     }
 
     errorText.classList.remove("open");
-    errorText.innerText = "Wrong email or password.";
+    errorText.innerText = "Wrong username or password.";
 }
 
 function normalizeAccountProfile(account) {
@@ -575,17 +588,17 @@ function buildAuthModeUi() {
     const helperText = document.createElement("p");
     helperText.className = "auth-helper-text";
     helperText.id = "authHelperText";
-    helperText.textContent = "Use your real email and password for Supabase Auth.";
+    helperText.textContent = "Use your username and password.";
 
     if (emailLabel) {
-        emailLabel.innerText = "Email";
+        emailLabel.innerText = "Username";
     }
 
     if (emailInput) {
-        emailInput.type = "email";
-        emailInput.placeholder = "Email";
-        emailInput.autocomplete = "email";
-        emailInput.inputMode = "email";
+        emailInput.type = "text";
+        emailInput.placeholder = "Enter username";
+        emailInput.autocomplete = "username";
+        emailInput.inputMode = "text";
     }
 
     popup.insertBefore(modeSwitch, firstField);
@@ -607,13 +620,13 @@ function setAuthMode(mode) {
 
     if (mode === "signup") {
         title.innerText = "Create Account";
-        text.innerText = "Sign up with your email and password.";
+        text.innerText = "Sign up with your username and password.";
         submitButton.innerText = "Create Account";
         loginModeButton.classList.remove("active");
         signupModeButton.classList.add("active");
     } else {
         title.innerText = "Log In";
-        text.innerText = "Log in with your email and password.";
+        text.innerText = "Log in with your username and password.";
         submitButton.innerText = "Log In";
         loginModeButton.classList.add("active");
         signupModeButton.classList.remove("active");
@@ -654,11 +667,11 @@ function closeAccountPopup() {
 }
 
 function clearAuthInputs() {
-    const emailInput = document.getElementById("username");
+    const usernameInput = document.getElementById("username");
     const passwordInput = document.getElementById("password");
 
-    if (emailInput) {
-        emailInput.value = "";
+    if (usernameInput) {
+        usernameInput.value = "";
     }
 
     if (passwordInput) {
@@ -667,11 +680,11 @@ function clearAuthInputs() {
 }
 
 function applyAuthInputLimits() {
-    const emailInput = document.getElementById("username");
+    const usernameInput = document.getElementById("username");
     const passwordInput = document.getElementById("password");
 
-    if (emailInput) {
-        emailInput.maxLength = 254;
+    if (usernameInput) {
+        usernameInput.maxLength = AUTH_TEXT_LIMIT;
     }
 
     if (passwordInput) {
@@ -691,9 +704,9 @@ function prefillPlayerName(inputId) {
 }
 
 async function updateLoginView() {
-    const email = authLoggedInEmail();
+    const username = authLoggedInUsername();
     const role = currentRole();
-    const displayName = email || "Guest";
+    const displayName = username || "Guest";
     const loginButton = document.getElementById("loginButton");
     const loginInfo = document.getElementById("loginInfo");
     const loginName = document.getElementById("loginName");
@@ -735,15 +748,15 @@ function mapSupabaseAuthError(error, fallbackMessage) {
     const message = rawMessage.toLowerCase();
 
     if (message.includes("invalid login credentials")) {
-        return "Wrong email or password.";
+        return "Wrong username or password.";
     }
 
     if (message.includes("already registered") || message.includes("already been registered")) {
-        return "That email already exists.";
+        return "That username already exists.";
     }
 
     if (message.includes("email not confirmed")) {
-        return "Email confirmation is enabled in Supabase Auth. Confirm the email or disable email confirmation.";
+        return "Email confirmation is enabled in Supabase Auth. Contact the admin to finish setup.";
     }
 
     if (rawMessage) {
@@ -753,23 +766,25 @@ function mapSupabaseAuthError(error, fallbackMessage) {
     return fallbackMessage;
 }
 
-function createAuthPayload(email, password) {
+function createAuthPayload(username, password) {
+    const email = usernameToEmail(username);
+
     return {
-        email: normalizeEmail(email),
+        email,
         password
     };
 }
 
-async function createAccount(email, password) {
-    const cleanEmail = normalizeEmail(email);
+async function createAccount(username, password) {
+    const cleanUsername = normalizeUsername(username);
 
-    if (!cleanEmail || !password) {
-        showAuthError("Type both an email and a password.");
+    if (!cleanUsername || !password) {
+        showAuthError("Type both a username and a password.");
         return;
     }
 
-    if (cleanEmail.length > 254) {
-        showAuthError("Email must be 254 characters or less.");
+    if (cleanUsername.length > AUTH_TEXT_LIMIT) {
+        showAuthError(`Username must be ${AUTH_TEXT_LIMIT} characters or less.`);
         return;
     }
 
@@ -786,7 +801,7 @@ async function createAccount(email, password) {
     }
 
     const { data, error } = await supabaseClient.auth.signUp(
-        createAuthPayload(cleanEmail, password)
+        createAuthPayload(cleanUsername, password)
     );
 
     if (error) {
@@ -797,7 +812,7 @@ async function createAccount(email, password) {
 
     if (!data.session) {
         console.error("Supabase signup returned no session. Email confirmation is likely enabled.", data);
-        showAuthError("Signup succeeded, but no session was created. Confirm the email or disable email confirmation.");
+        showAuthError("Signup succeeded, but no session was created. Contact the admin to finish setup.");
         return;
     }
 
@@ -809,16 +824,16 @@ async function createAccount(email, password) {
     alert("Account created!");
 }
 
-async function logIntoAccount(email, password) {
-    const cleanEmail = normalizeEmail(email);
+async function logIntoAccount(username, password) {
+    const cleanUsername = normalizeUsername(username);
 
-    if (!cleanEmail || !password) {
-        showAuthError("Type both an email and a password.");
+    if (!cleanUsername || !password) {
+        showAuthError("Type both a username and a password.");
         return;
     }
 
-    if (cleanEmail.length > 254) {
-        showAuthError("Email must be 254 characters or less.");
+    if (cleanUsername.length > AUTH_TEXT_LIMIT) {
+        showAuthError(`Username must be ${AUTH_TEXT_LIMIT} characters or less.`);
         return;
     }
 
@@ -829,14 +844,15 @@ async function logIntoAccount(email, password) {
         return;
     }
 
+    const email = usernameToEmail(cleanUsername);
     const { data, error } = await supabaseClient.auth.signInWithPassword({
-        email: cleanEmail,
+        email,
         password
     });
 
     if (error || !data.session) {
         console.error("Supabase login failed:", {
-            email: cleanEmail,
+            email,
             error
         });
         showAuthError(mapSupabaseAuthError(error, "Login failed."));
@@ -851,15 +867,15 @@ async function logIntoAccount(email, password) {
 }
 
 async function submitLogin() {
-    const emailInput = document.getElementById("username");
+    const usernameInput = document.getElementById("username");
     const passwordInput = document.getElementById("password");
-    const email = emailInput ? emailInput.value.trim() : "";
+    const username = usernameInput ? usernameInput.value.trim() : "";
     const password = passwordInput ? passwordInput.value : "";
 
     if (authMode === "signup") {
-        await createAccount(email, password);
+        await createAccount(username, password);
     } else {
-        await logIntoAccount(email, password);
+        await logIntoAccount(username, password);
     }
 }
 

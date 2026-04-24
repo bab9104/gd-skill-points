@@ -53,15 +53,15 @@ const supabaseClient = supabase.createClient(
             <h2>Log In</h2>
             <p class="auth-popup-text">Log in or create an account to save your progress.</p>
             <div class="auth-field">
-                <label for="username">Email</label>
-                <input id="username" type="email" placeholder="Email">
+                <label for="username">Username</label>
+                <input id="username" type="text" placeholder="Enter username">
             </div>
             <div class="auth-field">
                 <label for="password">Password</label>
                 <input id="password" type="password" placeholder="Password">
             </div>
             <button class="auth-button auth-full" onclick="submitLogin()">Submit</button>
-            <div class="auth-error" id="errorText">Wrong email or password.</div>
+            <div class="auth-error" id="errorText">Wrong username or password.</div>
         </div>
     </div>
 
