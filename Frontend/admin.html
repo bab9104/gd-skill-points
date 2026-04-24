@@ -492,7 +492,7 @@
                 }
 
                 const currentScore = Math.floor(Number(existingRow && existingRow.score) || 0);
-                const newScore = currentScore + delta;
+                const newScore = Math.max(0, currentScore + delta);
                 const { error } = await supabaseClient
                     .from(LEADERBOARD_TABLE)
                     .upsert({
