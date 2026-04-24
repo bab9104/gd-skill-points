@@ -290,7 +290,7 @@
                             return;
                         }
 
-                        accountScoresByUserId.set(userId, Math.max(0, Math.floor(Number(row && row.score) || 0)));
+                        accountScoresByUserId.set(userId, Math.floor(Number(row && row.score) || 0));
                     });
                 }
 
@@ -399,11 +399,10 @@
 
                 input.id = accountEditorInputId(profileId);
                 input.type = "number";
-                input.min = "0";
                 input.step = "1";
-                input.placeholder = "Enter score";
+                input.placeholder = "Add or subtract score";
                 input.disabled = false;
-                input.value = currentScore === null ? "" : String(currentScore);
+                input.value = "";
                 input.onclick = (event) => event.stopPropagation();
                 input.onkeydown = (event) => event.stopPropagation();
 
@@ -428,7 +427,7 @@
                         note.classList.add(accountEditorTone);
                     }
                 } else {
-                    note.textContent = "Click Add Score to save or update this player on the leaderboard.";
+                    note.textContent = "Enter a positive or negative number to change this player's leaderboard score.";
                 }
 
                 info.appendChild(name);
@@ -460,8 +459,8 @@
                 return;
             }
 
-            const rawValue = normalizeTextValue(input.value);
-            const numericScore = Number(rawValue);
+            const rawValue = String(input.value || "").trim();
+            const delta = parseInt(rawValue, 10);
             if (!rawValue) {
                 setAccountEditorMessage("Enter a score before saving.", "error");
                 selectedAccountId = normalizedProfileId;
@@ -469,8 +468,8 @@
                 return;
             }
 
-            if (!Number.isFinite(numericScore) || numericScore < 0) {
-                setAccountEditorMessage("Score must be a non-negative number.", "error");
+            if (!Number.isFinite(delta)) {
+                setAccountEditorMessage("Enter a whole number like 10 or -10.", "error");
                 selectedAccountId = normalizedProfileId;
                 renderAccounts();
                 return;
@@ -482,11 +481,23 @@
             renderAccounts();
 
             try {
+                const { data: existingRow, error: loadError } = await supabaseClient
+                    .from(LEADERBOARD_TABLE)
+                    .select("score")
+                    .eq("user_id", normalizedProfileId)
+                    .maybeSingle();
+
+                if (loadError) {
+                    throw loadError;
+                }
+
+                const currentScore = Math.floor(Number(existingRow && existingRow.score) || 0);
+                const newScore = currentScore + delta;
                 const { error } = await supabaseClient
                     .from(LEADERBOARD_TABLE)
                     .upsert({
                         user_id: normalizedProfileId,
-                        score: Math.max(0, Math.floor(numericScore))
+                        score: newScore
                     }, {
                         onConflict: "user_id"
                     });
@@ -495,8 +506,9 @@
                     throw error;
                 }
 
-                accountScoresByUserId.set(normalizedProfileId, Math.max(0, Math.floor(numericScore)));
-                setAccountEditorMessage("Score saved to the leaderboard.", "success");
+                accountScoresByUserId.set(normalizedProfileId, newScore);
+                input.value = "";
+                setAccountEditorMessage(`Score updated by ${delta}.`, "success");
                 broadcastLeaderboardRefresh();
                 await loadAccountsData({ preserveEditorMessage: true });
             } catch (error) {

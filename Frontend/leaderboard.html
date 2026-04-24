@@ -63,7 +63,7 @@
         }
 
         function normalizeLeaderboardRow(row, usernameByUserId = new Map()) {
-            const points = Math.max(0, Math.floor(Number(
+            const points = Math.floor(Number(
                 row && (row.score ?? row.points ?? row.total_points ?? 0)
             ) || 0));
             const userId = String(row && (row.user_id ?? row.userId ?? "") || "").trim();
