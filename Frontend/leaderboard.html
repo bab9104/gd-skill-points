@@ -40,6 +40,7 @@
 
     <script>
         const LEADERBOARD_TABLE = "leaderboard";
+        const LEADERBOARD_REFRESH_KEY = "gdLeaderboardRefresh";
 
         function leaderboardAdminEnabled() {
             return isAdminLoggedIn();
@@ -516,6 +517,12 @@
 
             window.addEventListener("focus", () => {
                 scheduleLeaderboardRefresh();
+            });
+
+            window.addEventListener("storage", (event) => {
+                if (event.key === LEADERBOARD_REFRESH_KEY) {
+                    scheduleLeaderboardRefresh();
+                }
             });
 
             document.addEventListener("visibilitychange", () => {

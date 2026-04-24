@@ -12,7 +12,7 @@
         .status-box strong { color: #ffd1d1; }
         .top-link { display: inline-block; margin-bottom: 20px; background: #ff6666; color: white; padding: 10px 14px; text-decoration: none; font-weight: bold; border-radius: 8px; }
         .admin-tabs { max-width: 700px; margin: 0 auto 22px; }
-        .admin-tabs.auth-mode-switch { grid-template-columns: repeat(2, 1fr); }
+        .admin-tabs.auth-mode-switch { grid-template-columns: repeat(3, 1fr); }
         .admin-panel { display: none; }
         .admin-panel.open { display: block; }
         .queue-title { margin: 28px 0 14px; color: #ffb3b3; }
@@ -39,8 +39,23 @@
         .home-card-text { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; word-break: break-word; }
         .home-card-title { color: #fff3f3; font-size: 22px; font-weight: bold; margin-bottom: 8px; }
         .home-card-description { color: #ffd4d4; font-size: 16px; line-height: 1.5; }
+        .accounts-list { display: grid; gap: 14px; }
+        .account-card { padding: 16px 18px; background: rgba(255, 255, 255, 0.04); border-left: 5px solid #ff8a3d; border-radius: 12px; cursor: pointer; pointer-events: auto; }
+        .account-card.open { box-shadow: 0 0 18px rgba(255, 138, 61, 0.16); }
+        .account-head { display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; align-items: center; }
+        .account-name { color: #fff3f3; font-size: 22px; font-weight: bold; }
+        .account-meta { color: #ffd0d0; font-size: 14px; line-height: 1.5; text-align: left; }
+        .account-score { color: #ffbb8d; font-weight: bold; }
+        .account-editor { display: none; margin-top: 14px; padding-top: 14px; border-top: 1px solid rgba(255, 138, 61, 0.24); pointer-events: auto; }
+        .account-editor.open { display: block; }
+        .account-editor-row { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+        .account-score-input { flex: 1 1 180px; padding: 11px 12px; border: 1px solid #8a2b2b; border-radius: 8px; background: #140606; color: white; font: inherit; box-sizing: border-box; pointer-events: auto; }
+        .account-score-input:disabled { opacity: 1; }
+        .account-editor-note { margin-top: 10px; color: #ffd0d0; font-size: 14px; }
+        .account-editor-note.success { color: #99f0a7; }
+        .account-editor-note.error { color: #ff9898; }
         @media (max-width: 900px) { .home-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
-        @media (max-width: 640px) { .home-grid { grid-template-columns: 1fr; } }
+        @media (max-width: 640px) { .home-grid { grid-template-columns: 1fr; } .account-editor-row { flex-direction: column; align-items: stretch; } }
     </style>
 </head>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js"></script>
@@ -58,11 +73,16 @@
         </div>
         <div class="admin-tabs auth-mode-switch">
             <button class="auth-mode-button active" id="queueTabButton" type="button" onclick="setAdminTab('queue')">Pending Scores</button>
+            <button class="auth-mode-button" id="accountsTabButton" type="button" onclick="setAdminTab('accounts')">Accounts</button>
             <button class="auth-mode-button" id="homeTabButton" type="button" onclick="setAdminTab('home')">Main Menu</button>
         </div>
         <div class="admin-panel open" id="queuePanel">
             <h2 class="queue-title">Pending Score Reviews</h2>
             <div class="queue-list" id="queueList"></div>
+        </div>
+        <div class="admin-panel" id="accountsPanel">
+            <h2 class="section-title">Accounts</h2>
+            <div class="accounts-list" id="accountsList"></div>
         </div>
         <div class="admin-panel" id="homePanel">
             <h2 class="section-title">Main Menu Boxes</h2>
@@ -79,22 +99,36 @@
 
     <script>
         const LEADERBOARD_TABLE = "leaderboard";
+        const PROFILES_TABLE = "profiles";
+        const LEADERBOARD_REFRESH_KEY = "gdLeaderboardRefresh";
         const queueList = document.getElementById("queueList");
         const queuePanel = document.getElementById("queuePanel");
+        const accountsPanel = document.getElementById("accountsPanel");
         const homePanel = document.getElementById("homePanel");
         const queueTabButton = document.getElementById("queueTabButton");
+        const accountsTabButton = document.getElementById("accountsTabButton");
         const homeTabButton = document.getElementById("homeTabButton");
+        const accountsList = document.getElementById("accountsList");
         const homeBoxList = document.getElementById("homeBoxList");
         const homeBoxTitle = document.getElementById("homeBoxTitle");
         const homeBoxDescription = document.getElementById("homeBoxDescription");
         let activeAdminTab = "queue";
         const approvingSubmissionKeys = new Set();
+        let accountProfiles = [];
+        let accountScoresByUserId = new Map();
+        let accountsLoading = false;
+        let selectedAccountId = "";
+        let savingAccountScoreForUserId = "";
+        let accountEditorMessage = "";
+        let accountEditorTone = "";
 
         function setAdminTab(tabName) {
             activeAdminTab = tabName;
             queuePanel.classList.toggle("open", tabName === "queue");
+            accountsPanel.classList.toggle("open", tabName === "accounts");
             homePanel.classList.toggle("open", tabName === "home");
             queueTabButton.classList.toggle("active", tabName === "queue");
+            accountsTabButton.classList.toggle("active", tabName === "accounts");
             homeTabButton.classList.toggle("active", tabName === "home");
         }
 
@@ -112,6 +146,270 @@
             }
 
             return window.supabaseClient || null;
+        }
+
+        function normalizeTextValue(value) {
+            return String(value || "").trim();
+        }
+
+        function accountEditorInputId(profileId) {
+            return `account-score-input-${profileId}`;
+        }
+
+        function setAccountEditorMessage(message, tone = "") {
+            accountEditorMessage = message || "";
+            accountEditorTone = tone || "";
+        }
+
+        function broadcastLeaderboardRefresh() {
+            try {
+                localStorage.setItem(LEADERBOARD_REFRESH_KEY, String(Date.now()));
+            } catch (error) {
+                console.warn("Could not write leaderboard refresh marker.", error);
+            }
+        }
+
+        async function loadAccountsData() {
+            const supabaseClient = getAdminSupabaseClient();
+            if (!supabaseClient) {
+                accountProfiles = [];
+                accountScoresByUserId = new Map();
+                return;
+            }
+
+            accountsLoading = true;
+            renderAccounts();
+
+            try {
+                const profilesRequest = supabaseClient
+                    .from(PROFILES_TABLE)
+                    .select("*")
+                    .order("username", { ascending: true });
+                const leaderboardRequest = supabaseClient
+                    .from(LEADERBOARD_TABLE)
+                    .select("user_id, score");
+
+                const [{ data: profiles, error: profilesError }, { data: scores, error: scoresError }] = await Promise.all([
+                    profilesRequest,
+                    leaderboardRequest
+                ]);
+
+                if (profilesError) {
+                    throw profilesError;
+                }
+
+                if (scoresError) {
+                    throw scoresError;
+                }
+
+                accountProfiles = Array.isArray(profiles) ? profiles : [];
+                accountScoresByUserId = new Map();
+
+                if (Array.isArray(scores)) {
+                    scores.forEach((row) => {
+                        const userId = normalizeTextValue(row && row.user_id);
+                        if (!userId) {
+                            return;
+                        }
+
+                        accountScoresByUserId.set(userId, Math.max(0, Math.floor(Number(row && row.score) || 0)));
+                    });
+                }
+
+                setAccountEditorMessage("", "");
+            } catch (error) {
+                console.error("Failed to load profile accounts from Supabase:", error);
+                accountProfiles = [];
+                accountScoresByUserId = new Map();
+                setAccountEditorMessage(error && error.message ? error.message : "Could not load accounts right now.", "error");
+            } finally {
+                accountsLoading = false;
+                renderAccounts();
+            }
+        }
+
+        function toggleAccountEditor(profileId) {
+            if (!isAdminLoggedIn()) {
+                return;
+            }
+
+            const normalizedId = normalizeTextValue(profileId);
+            if (!normalizedId) {
+                return;
+            }
+
+            selectedAccountId = selectedAccountId === normalizedId ? "" : normalizedId;
+            if (!selectedAccountId) {
+                setAccountEditorMessage("", "");
+            }
+            renderAccounts();
+        }
+
+        function renderAccounts() {
+            if (!accountsList) {
+                return;
+            }
+
+            accountsList.innerHTML = "";
+
+            if (!isAdminLoggedIn()) {
+                accountsList.innerHTML = '<div class="empty-box">Log in with an admin account to manage player scores.</div>';
+                return;
+            }
+
+            if (accountsLoading) {
+                accountsList.innerHTML = '<div class="empty-box">Loading profiles from Supabase...</div>';
+                return;
+            }
+
+            if (accountProfiles.length === 0) {
+                const emptyMessage = accountEditorTone === "error" && accountEditorMessage
+                    ? accountEditorMessage
+                    : "No profiles were found in Supabase.";
+                accountsList.innerHTML = `<div class="empty-box">${emptyMessage}</div>`;
+                return;
+            }
+
+            accountProfiles.forEach((profile) => {
+                const profileId = normalizeTextValue(profile && profile.id);
+                const username = normalizeTextValue(profile && profile.username) || "Unknown player";
+                const createdAt = normalizeTextValue(profile && profile.created_at);
+                const currentScore = accountScoresByUserId.has(profileId)
+                    ? accountScoresByUserId.get(profileId)
+                    : null;
+                const isOpen = selectedAccountId === profileId;
+                const isSavingThisProfile = savingAccountScoreForUserId === profileId;
+
+                const card = document.createElement("div");
+                const head = document.createElement("div");
+                const info = document.createElement("div");
+                const name = document.createElement("div");
+                const meta = document.createElement("div");
+                const score = document.createElement("div");
+                const editor = document.createElement("div");
+                const editorRow = document.createElement("div");
+                const input = document.createElement("input");
+                const addButton = document.createElement("button");
+                const note = document.createElement("div");
+
+                card.className = `account-card${isOpen ? " open" : ""}`;
+                head.className = "account-head";
+                info.className = "account-meta";
+                name.className = "account-name";
+                meta.className = "account-meta";
+                score.className = "account-score";
+                editor.className = `account-editor${isOpen ? " open" : ""}`;
+                editorRow.className = "account-editor-row";
+                input.className = "account-score-input";
+                addButton.className = "action-button approve-button";
+                note.className = "account-editor-note";
+
+                card.onclick = () => toggleAccountEditor(profileId);
+                name.textContent = username;
+                meta.textContent = createdAt ? `Created: ${createdAt}` : "Created: Unknown";
+                score.textContent = currentScore === null ? "No score saved yet" : `Current score: ${currentScore} pts`;
+
+                input.id = accountEditorInputId(profileId);
+                input.type = "number";
+                input.min = "0";
+                input.step = "1";
+                input.placeholder = "Enter score";
+                input.disabled = false;
+                input.value = currentScore === null ? "" : String(currentScore);
+                input.onclick = (event) => event.stopPropagation();
+                input.onkeydown = (event) => event.stopPropagation();
+
+                addButton.textContent = isSavingThisProfile ? "Saving..." : "Add Score";
+                addButton.disabled = isSavingThisProfile;
+                addButton.onclick = async (event) => {
+                    event.stopPropagation();
+                    await addScoreToProfile(profileId);
+                };
+
+                if (isOpen && accountEditorMessage) {
+                    note.textContent = accountEditorMessage;
+                    if (accountEditorTone) {
+                        note.classList.add(accountEditorTone);
+                    }
+                } else {
+                    note.textContent = "Click Add Score to save or update this player on the leaderboard.";
+                }
+
+                info.appendChild(name);
+                info.appendChild(meta);
+                head.appendChild(info);
+                head.appendChild(score);
+                editorRow.appendChild(input);
+                editorRow.appendChild(addButton);
+                editor.appendChild(editorRow);
+                editor.appendChild(note);
+                card.appendChild(head);
+                card.appendChild(editor);
+                accountsList.appendChild(card);
+            });
+        }
+
+        async function addScoreToProfile(profileId) {
+            if (!isAdminLoggedIn()) {
+                return;
+            }
+
+            const normalizedProfileId = normalizeTextValue(profileId);
+            const input = document.getElementById(accountEditorInputId(normalizedProfileId));
+            const supabaseClient = getAdminSupabaseClient();
+            if (!input || !supabaseClient) {
+                setAccountEditorMessage("Supabase is not available on this page.", "error");
+                renderAccounts();
+                return;
+            }
+
+            const rawValue = normalizeTextValue(input.value);
+            const numericScore = Number(rawValue);
+            if (!rawValue) {
+                setAccountEditorMessage("Enter a score before saving.", "error");
+                selectedAccountId = normalizedProfileId;
+                renderAccounts();
+                return;
+            }
+
+            if (!Number.isFinite(numericScore) || numericScore < 0) {
+                setAccountEditorMessage("Score must be a non-negative number.", "error");
+                selectedAccountId = normalizedProfileId;
+                renderAccounts();
+                return;
+            }
+
+            savingAccountScoreForUserId = normalizedProfileId;
+            selectedAccountId = normalizedProfileId;
+            setAccountEditorMessage("Saving score to Supabase...", "");
+            renderAccounts();
+
+            try {
+                const { error } = await supabaseClient
+                    .from(LEADERBOARD_TABLE)
+                    .upsert({
+                        user_id: normalizedProfileId,
+                        score: Math.max(0, Math.floor(numericScore))
+                    }, {
+                        onConflict: "user_id"
+                    });
+
+                if (error) {
+                    throw error;
+                }
+
+                accountScoresByUserId.set(normalizedProfileId, Math.max(0, Math.floor(numericScore)));
+                setAccountEditorMessage("Score saved to the leaderboard.", "success");
+                broadcastLeaderboardRefresh();
+                await loadAccountsData();
+            } catch (error) {
+                console.error("Failed to save admin-assigned score:", error);
+                setAccountEditorMessage(error && error.message ? error.message : "Could not save that score right now.", "error");
+                renderAccounts();
+            } finally {
+                savingAccountScoreForUserId = "";
+                renderAccounts();
+            }
         }
 
         async function findProfileIdForSubmission(entry) {
@@ -346,6 +644,8 @@
 
                 pendingScores.splice(index, 1);
                 savePendingScores(pendingScores);
+                broadcastLeaderboardRefresh();
+                await loadAccountsData();
                 renderQueue();
             } catch (error) {
                 console.error("Failed to approve score into Supabase leaderboard:", error);
@@ -368,12 +668,18 @@
             const statusBox = document.getElementById("adminStatusBox");
             if (isAdminLoggedIn()) {
                 statusBox.innerHTML = "<strong>Status:</strong> Admin access enabled.";
+                await loadAccountsData();
             } else {
                 statusBox.innerHTML = "<strong>Status:</strong> Log in with an admin account to use admin access.";
                 homeBoxTitle.value = "";
                 homeBoxDescription.value = "";
+                accountProfiles = [];
+                accountScoresByUserId = new Map();
+                selectedAccountId = "";
+                setAccountEditorMessage("", "");
             }
             renderQueue();
+            renderAccounts();
             renderHomeBoxes();
             setAdminTab(activeAdminTab);
         }
