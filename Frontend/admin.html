@@ -51,6 +51,7 @@
         .account-editor-row { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
         .account-score-input { flex: 1 1 180px; padding: 11px 12px; border: 1px solid #8a2b2b; border-radius: 8px; background: #140606; color: white; font: inherit; box-sizing: border-box; pointer-events: auto; }
         .account-score-input:disabled { opacity: 1; }
+        .delete-account-button { background: #c91616; }
         .account-editor-note { margin-top: 10px; color: #ffd0d0; font-size: 14px; }
         .account-editor-note.success { color: #99f0a7; }
         .account-editor-note.error { color: #ff9898; }
@@ -100,6 +101,7 @@
     <script>
         const LEADERBOARD_TABLE = "leaderboard";
         const PROFILES_TABLE = "profiles";
+        const ADMIN_DELETE_ACCOUNT_RPC = "admin_delete_account";
         const LEADERBOARD_REFRESH_KEY = "gdLeaderboardRefresh";
         const queueList = document.getElementById("queueList");
         const queuePanel = document.getElementById("queuePanel");
@@ -117,8 +119,12 @@
         let accountProfiles = [];
         let accountScoresByUserId = new Map();
         let accountsLoading = false;
+        let accountsRequestToken = 0;
+        let accountsRefreshTimer = 0;
+        let adminRealtimeChannel = null;
         let selectedAccountId = "";
         let savingAccountScoreForUserId = "";
+        let deletingAccountUserId = "";
         let accountEditorMessage = "";
         let accountEditorTone = "";
 
@@ -169,14 +175,82 @@
             }
         }
 
-        async function loadAccountsData() {
+        function clearAccountsRefreshTimer() {
+            if (accountsRefreshTimer) {
+                window.clearTimeout(accountsRefreshTimer);
+                accountsRefreshTimer = 0;
+            }
+        }
+
+        function scheduleAccountsRefresh(delay = 0, options = {}) {
+            clearAccountsRefreshTimer();
+            accountsRefreshTimer = window.setTimeout(() => {
+                accountsRefreshTimer = 0;
+                loadAccountsData(options).catch((error) => {
+                    console.error("Accounts refresh failed:", error);
+                });
+            }, Math.max(0, delay));
+        }
+
+        function unsubscribeAdminRealtime() {
+            const supabaseClient = getAdminSupabaseClient();
+            if (supabaseClient && adminRealtimeChannel) {
+                supabaseClient.removeChannel(adminRealtimeChannel);
+            }
+
+            adminRealtimeChannel = null;
+        }
+
+        function syncAdminRealtimeSubscription() {
+            const supabaseClient = getAdminSupabaseClient();
+            const shouldSubscribe = Boolean(supabaseClient && isAdminLoggedIn());
+
+            if (!shouldSubscribe) {
+                unsubscribeAdminRealtime();
+                return;
+            }
+
+            if (adminRealtimeChannel) {
+                return;
+            }
+
+            adminRealtimeChannel = supabaseClient
+                .channel("gd-admin-scores")
+                .on("postgres_changes", {
+                    event: "*",
+                    schema: "public",
+                    table: PROFILES_TABLE
+                }, () => {
+                    scheduleAccountsRefresh(120, { preserveEditorMessage: true });
+                })
+                .on("postgres_changes", {
+                    event: "*",
+                    schema: "public",
+                    table: LEADERBOARD_TABLE
+                }, () => {
+                    scheduleAccountsRefresh(120, { preserveEditorMessage: true });
+                })
+                .subscribe((status) => {
+                    if (status === "CHANNEL_ERROR") {
+                        console.warn("Supabase realtime subscription failed for admin score tools.");
+                    }
+                });
+        }
+
+        async function loadAccountsData(options = {}) {
             const supabaseClient = getAdminSupabaseClient();
             if (!supabaseClient) {
                 accountProfiles = [];
                 accountScoresByUserId = new Map();
+                accountsLoading = false;
+                if (options.preserveEditorMessage !== true) {
+                    setAccountEditorMessage("Supabase is not available on this page.", "error");
+                }
+                renderAccounts();
                 return;
             }
 
+            const requestToken = ++accountsRequestToken;
             accountsLoading = true;
             renderAccounts();
 
@@ -202,6 +276,10 @@
                     throw scoresError;
                 }
 
+                if (requestToken !== accountsRequestToken) {
+                    return;
+                }
+
                 accountProfiles = Array.isArray(profiles) ? profiles : [];
                 accountScoresByUserId = new Map();
 
@@ -216,15 +294,23 @@
                     });
                 }
 
-                setAccountEditorMessage("", "");
+                if (options.preserveEditorMessage !== true) {
+                    setAccountEditorMessage("", "");
+                }
             } catch (error) {
+                if (requestToken !== accountsRequestToken) {
+                    return;
+                }
+
                 console.error("Failed to load profile accounts from Supabase:", error);
                 accountProfiles = [];
                 accountScoresByUserId = new Map();
                 setAccountEditorMessage(error && error.message ? error.message : "Could not load accounts right now.", "error");
             } finally {
-                accountsLoading = false;
-                renderAccounts();
+                if (requestToken === accountsRequestToken) {
+                    accountsLoading = false;
+                    renderAccounts();
+                }
             }
         }
 
@@ -279,6 +365,7 @@
                     : null;
                 const isOpen = selectedAccountId === profileId;
                 const isSavingThisProfile = savingAccountScoreForUserId === profileId;
+                const isDeletingThisProfile = deletingAccountUserId === profileId;
 
                 const card = document.createElement("div");
                 const head = document.createElement("div");
@@ -290,6 +377,7 @@
                 const editorRow = document.createElement("div");
                 const input = document.createElement("input");
                 const addButton = document.createElement("button");
+                const deleteButton = document.createElement("button");
                 const note = document.createElement("div");
 
                 card.className = `account-card${isOpen ? " open" : ""}`;
@@ -320,10 +408,18 @@
                 input.onkeydown = (event) => event.stopPropagation();
 
                 addButton.textContent = isSavingThisProfile ? "Saving..." : "Add Score";
-                addButton.disabled = isSavingThisProfile;
+                addButton.disabled = isSavingThisProfile || isDeletingThisProfile;
                 addButton.onclick = async (event) => {
                     event.stopPropagation();
                     await addScoreToProfile(profileId);
+                };
+
+                deleteButton.className = "action-button delete-account-button";
+                deleteButton.textContent = isDeletingThisProfile ? "Deleting..." : "Delete Account";
+                deleteButton.disabled = isDeletingThisProfile || isSavingThisProfile;
+                deleteButton.onclick = async (event) => {
+                    event.stopPropagation();
+                    await deleteAccount(profileId);
                 };
 
                 if (isOpen && accountEditorMessage) {
@@ -341,6 +437,7 @@
                 head.appendChild(score);
                 editorRow.appendChild(input);
                 editorRow.appendChild(addButton);
+                editorRow.appendChild(deleteButton);
                 editor.appendChild(editorRow);
                 editor.appendChild(note);
                 card.appendChild(head);
@@ -401,7 +498,7 @@
                 accountScoresByUserId.set(normalizedProfileId, Math.max(0, Math.floor(numericScore)));
                 setAccountEditorMessage("Score saved to the leaderboard.", "success");
                 broadcastLeaderboardRefresh();
-                await loadAccountsData();
+                await loadAccountsData({ preserveEditorMessage: true });
             } catch (error) {
                 console.error("Failed to save admin-assigned score:", error);
                 setAccountEditorMessage(error && error.message ? error.message : "Could not save that score right now.", "error");
@@ -645,7 +742,7 @@
                 pendingScores.splice(index, 1);
                 savePendingScores(pendingScores);
                 broadcastLeaderboardRefresh();
-                await loadAccountsData();
+                await loadAccountsData({ preserveEditorMessage: true });
                 renderQueue();
             } catch (error) {
                 console.error("Failed to approve score into Supabase leaderboard:", error);
@@ -664,10 +761,91 @@
             renderQueue();
         }
 
+        function removePendingScoresForProfile(profile) {
+            const profileId = normalizeTextValue(profile && profile.id);
+            const profileUsername = normalizeTextValue(profile && profile.username).toLowerCase();
+            const remainingScores = getPendingScores().filter((entry) => {
+                const entryUserId = normalizeTextValue(entry && (entry.user_id || entry.userId));
+                const entryUsername = normalizeTextValue(entry && entry.name).toLowerCase();
+
+                if (profileId && entryUserId && entryUserId === profileId) {
+                    return false;
+                }
+
+                if (profileUsername && entryUsername && entryUsername === profileUsername) {
+                    return false;
+                }
+
+                return true;
+            });
+
+            savePendingScores(remainingScores);
+        }
+
+        async function deleteAccount(profileId) {
+            if (!isAdminLoggedIn()) {
+                return;
+            }
+
+            const normalizedProfileId = normalizeTextValue(profileId);
+            const profile = accountProfiles.find((entry) => normalizeTextValue(entry && entry.id) === normalizedProfileId);
+            const username = normalizeTextValue(profile && profile.username) || "this player";
+            const supabaseClient = getAdminSupabaseClient();
+
+            if (!normalizedProfileId || !profile || !supabaseClient) {
+                setAccountEditorMessage("Supabase is not available on this page.", "error");
+                renderAccounts();
+                return;
+            }
+
+            if (deletingAccountUserId === normalizedProfileId) {
+                return;
+            }
+
+            if (!confirm(`Delete ${username}'s account, profile, leaderboard row, and pending scores?`)) {
+                return;
+            }
+
+            deletingAccountUserId = normalizedProfileId;
+            selectedAccountId = normalizedProfileId;
+            setAccountEditorMessage("Deleting account...", "");
+            renderAccounts();
+
+            try {
+                const { error } = await supabaseClient.rpc(ADMIN_DELETE_ACCOUNT_RPC, {
+                    target_user_id: normalizedProfileId
+                });
+
+                if (error) {
+                    throw error;
+                }
+
+                removePendingScoresForProfile(profile);
+                accountScoresByUserId.delete(normalizedProfileId);
+                accountProfiles = accountProfiles.filter((entry) => normalizeTextValue(entry && entry.id) !== normalizedProfileId);
+                selectedAccountId = "";
+                setAccountEditorMessage("", "");
+                broadcastLeaderboardRefresh();
+                await loadAccountsData();
+                renderQueue();
+            } catch (error) {
+                console.error("Failed to delete account:", error);
+                setAccountEditorMessage(
+                    error && error.message ? error.message : "Could not delete that account right now.",
+                    "error"
+                );
+                renderAccounts();
+            } finally {
+                deletingAccountUserId = "";
+                renderAccounts();
+            }
+        }
+
         async function updatePageForAuth() {
             const statusBox = document.getElementById("adminStatusBox");
             if (isAdminLoggedIn()) {
                 statusBox.innerHTML = "<strong>Status:</strong> Admin access enabled.";
+                syncAdminRealtimeSubscription();
                 await loadAccountsData();
             } else {
                 statusBox.innerHTML = "<strong>Status:</strong> Log in with an admin account to use admin access.";
@@ -675,7 +853,10 @@
                 homeBoxDescription.value = "";
                 accountProfiles = [];
                 accountScoresByUserId = new Map();
+                accountsLoading = false;
                 selectedAccountId = "";
+                clearAccountsRefreshTimer();
+                unsubscribeAdminRealtime();
                 setAccountEditorMessage("", "");
             }
             renderQueue();
@@ -689,6 +870,24 @@
                 gdAppState.onChange(["pendingScores"], () => { renderQueue(); });
                 gdAppState.onChange(["homeMenuBoxes"], () => { renderHomeBoxes(); });
             }
+
+            window.addEventListener("focus", () => {
+                if (isAdminLoggedIn()) {
+                    scheduleAccountsRefresh(0, { preserveEditorMessage: true });
+                }
+            });
+
+            window.addEventListener("storage", (event) => {
+                if (event.key === LEADERBOARD_REFRESH_KEY && isAdminLoggedIn()) {
+                    scheduleAccountsRefresh(0, { preserveEditorMessage: true });
+                }
+            });
+
+            document.addEventListener("visibilitychange", () => {
+                if (!document.hidden && isAdminLoggedIn()) {
+                    scheduleAccountsRefresh(0, { preserveEditorMessage: true });
+                }
+            });
 
             await updatePageForAuth();
         });

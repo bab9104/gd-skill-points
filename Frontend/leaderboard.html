@@ -8,26 +8,14 @@
         .panel { width: min(92%, 900px); margin: 40px auto; padding: 28px 22px; background: rgba(24, 3, 3, 0.92); border: 1px solid #ff4d4d; border-radius: 14px; box-shadow: 0 0 24px rgba(255, 77, 77, 0.2); }
         h1 { margin-top: 0; color: #ff6666; text-shadow: 0 0 10px rgba(255, 77, 77, 0.45); }
         .top-bar { display: flex; justify-content: center; gap: 12px; flex-wrap: wrap; margin-bottom: 18px; }
-        .submit-card { width: min(100%, 560px); margin: 0 auto 18px; padding: 18px; background: #180808; border-left: 5px solid #ff8a3d; border-radius: 10px; box-sizing: border-box; text-align: left; }
-        .submit-card h2 { margin: 0 0 8px; color: #ffd4a8; font-size: 24px; }
-        .submit-card p { margin: 0 0 14px; color: #ffd9d9; line-height: 1.5; }
-        .submit-row { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
-        .score-input { flex: 1 1 220px; padding: 11px 12px; border: 1px solid #8a2b2b; border-radius: 8px; background: #140606; color: white; font: inherit; box-sizing: border-box; }
-        .save-score-button { background: #ff7a2d; color: white; }
-        .score-status { min-height: 22px; margin-top: 10px; color: #ffcf9f; }
-        .score-status.error { color: #ff9898; }
-        .score-status.success { color: #99f0a7; }
         button,a.button-link { border: none; border-radius: 8px; padding: 10px 16px; font-weight: bold; cursor: pointer; text-decoration: none; font-size: 15px; }
-        .danger { background: #c91616; color: white; }
         .home-link { background: #ff6666; color: white; }
         #list { margin-top: 18px; }
         .score-card { background: #180808; margin: 12px auto; width: min(100%, 560px); border-left: 5px solid #ff4d4d; border-radius: 10px; box-sizing: border-box; overflow: hidden; }
         .score-main { display: flex; justify-content: space-between; align-items: center; gap: 12px; text-align: left; padding: 16px; }
         .score-text { font-size: 18px; word-break: break-word; }
-        .score-actions { display: flex; align-items: center; gap: 10px; }
         .empty { color: #ffb3b3; margin-top: 30px; }
-        .delete-one { background: #ff3b3b; color: white; min-width: 42px; }
-        @media (max-width: 560px) { .panel { margin: 20px auto; padding: 22px 14px; } .submit-row { flex-direction: column; align-items: stretch; } .score-main { flex-direction: column; align-items: stretch; } .score-actions { justify-content: space-between; } }
+        @media (max-width: 560px) { .panel { margin: 20px auto; padding: 22px 14px; } .score-main { flex-direction: column; align-items: stretch; } }
     </style>
 </head>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js"></script>
@@ -36,29 +24,18 @@
     <div class="auth-overlay" id="loginOverlay"><div class="auth-popup"><div class="auth-close-row"><button class="auth-close-button" onclick="closeLoginPopup()">X</button></div><h2>Log In</h2><p class="auth-popup-text">Log in to view your account and admin tools.</p><div class="auth-field"><label for="username">Username</label><input id="username" type="text" placeholder="Enter username"></div><div class="auth-field"><label for="password">Password</label><input id="password" type="password" placeholder="Password"></div><button class="auth-button auth-full" onclick="submitLogin()">Submit</button><div class="auth-error" id="errorText">Wrong username or password.</div></div></div>
     <div class="auth-overlay" id="accountOverlay"><div class="auth-popup"><div class="auth-close-row"><button class="auth-close-button" onclick="closeAccountPopup()">X</button></div><h2>Account</h2><div class="auth-panel-top"><div class="auth-name" id="panelName">Guest</div><div class="auth-role" id="panelRole">user</div></div><p class="auth-popup-text">This can hold more account buttons later. For now, the button below logs you out.</p><button class="auth-panel-button auth-full" onclick="logOut()">Log Out</button></div></div>
 
-    <div class="panel"><h1>Leaderboard</h1><div class="top-bar"><a class="button-link home-link" href="index.html">Back to Home</a><button class="danger" id="deleteAllButton" onclick="deleteAll()">Delete All Scores</button></div><div class="submit-card" id="submitCard"><h2>Save Your Score</h2><p id="submitPrompt">Log in to add your score to the Supabase leaderboard.</p><div class="submit-row"><input class="score-input" id="scoreInput" type="number" min="0" step="1" placeholder="Enter score"><button class="save-score-button" id="saveScoreButton" type="button" onclick="saveOwnScore()">Save Score</button></div><div class="score-status" id="scoreStatus"></div></div><div id="list"></div></div>
+    <div class="panel"><h1>Leaderboard</h1><div class="top-bar"><a class="button-link home-link" href="index.html">Back to Home</a></div><div id="list"></div></div>
 
     <script>
         const LEADERBOARD_TABLE = "leaderboard";
         const LEADERBOARD_REFRESH_KEY = "gdLeaderboardRefresh";
 
-        function leaderboardAdminEnabled() {
-            return isAdminLoggedIn();
-        }
-
         const list = document.getElementById("list");
-        const deleteAllButton = document.getElementById("deleteAllButton");
-        const submitCard = document.getElementById("submitCard");
-        const submitPrompt = document.getElementById("submitPrompt");
-        const scoreInput = document.getElementById("scoreInput");
-        const saveScoreButton = document.getElementById("saveScoreButton");
-        const scoreStatus = document.getElementById("scoreStatus");
         let leaderboardRows = [];
         let leaderboardRequestToken = 0;
         let leaderboardRefreshTimer = 0;
         let leaderboardRealtimeChannel = null;
         let leaderboardLoadMessage = "";
-        let savingOwnScore = false;
 
         function getLeaderboardSupabaseClient() {
             if (typeof getSupabaseClient === "function") {
@@ -70,35 +47,6 @@
 
         function normalizeLeaderboardValue(value) {
             return String(value || "").trim();
-        }
-
-        function scoreInputValue() {
-            return normalizeLeaderboardValue(scoreInput && scoreInput.value);
-        }
-
-        function setScoreStatus(message, tone = "") {
-            if (!scoreStatus) {
-                return;
-            }
-
-            scoreStatus.textContent = message || "";
-            scoreStatus.className = "score-status";
-            if (tone) {
-                scoreStatus.classList.add(tone);
-            }
-        }
-
-        function getLeaderboardUser() {
-            if (typeof getCurrentUser !== "function") {
-                return null;
-            }
-
-            return getCurrentUser();
-        }
-
-        function getLeaderboardUserId() {
-            const user = getLeaderboardUser();
-            return normalizeLeaderboardValue(user && user.id);
         }
 
         function normalizeLeaderboardIdentifier(row) {
@@ -177,63 +125,10 @@
             return dedupedRows;
         }
 
-        function getCurrentUserLeaderboardRow() {
-            const currentUserId = getLeaderboardUserId().toLowerCase();
-            if (!currentUserId) {
-                return null;
-            }
-
-            return getDisplayLeaderboardRows().find((row) => {
-                const rowUserId = normalizeLeaderboardValue(row && row.raw && row.raw.user_id).toLowerCase();
-                return rowUserId === currentUserId;
-            }) || null;
-        }
-
-        function renderScoreSubmission() {
-            if (!submitCard || !submitPrompt || !scoreInput || !saveScoreButton) {
-                return;
-            }
-
-            const loggedIn = typeof isLoggedIn === "function" && isLoggedIn();
-            const currentRow = getCurrentUserLeaderboardRow();
-            const shouldSyncInput = document.activeElement !== scoreInput || scoreInput.dataset.dirty !== "true";
-
-            submitCard.style.display = "block";
-            scoreInput.disabled = !loggedIn || savingOwnScore;
-            saveScoreButton.disabled = !loggedIn || savingOwnScore;
-            saveScoreButton.textContent = savingOwnScore ? "Saving..." : "Save Score";
-
-            if (!loggedIn) {
-                submitPrompt.textContent = "Log in to add your score to the Supabase leaderboard.";
-                if (shouldSyncInput) {
-                    scoreInput.value = "";
-                    scoreInput.dataset.dirty = "false";
-                }
-                if (!savingOwnScore) {
-                    setScoreStatus("Log in first to save a score.");
-                }
-                return;
-            }
-
-            submitPrompt.textContent = currentRow
-                ? `Your current saved score is ${currentRow.score} pts. Saving again updates that row.`
-                : "You do not have a saved leaderboard score yet.";
-
-            if (shouldSyncInput) {
-                scoreInput.value = currentRow ? String(currentRow.score) : "";
-                scoreInput.dataset.dirty = "false";
-            }
-
-            if (!savingOwnScore && !normalizeLeaderboardValue(scoreStatus.textContent)) {
-                setScoreStatus(currentRow ? "Change the number above to update your score." : "Enter a score, then save it.");
-            }
-        }
-
         function renderLeaderboard() {
-            if (!list || !deleteAllButton) return;
+            if (!list) return;
 
             list.innerHTML = "";
-            deleteAllButton.style.display = leaderboardAdminEnabled() ? "inline-block" : "none";
 
             const sortedScores = getDisplayLeaderboardRows();
             if (sortedScores.length === 0) {
@@ -246,35 +141,19 @@
                 const main = document.createElement("div");
                 const info = document.createElement("div");
                 const scoreText = document.createElement("div");
-                const actions = document.createElement("div");
 
                 card.className = "score-card";
                 main.className = "score-main";
                 info.className = "score-info";
                 scoreText.className = "score-text";
-                actions.className = "score-actions";
 
                 scoreText.textContent = `${index + 1}. ${entry.displayName} - ${entry.score} pts`;
                 info.appendChild(scoreText);
 
-                if (leaderboardAdminEnabled()) {
-                    const deleteButton = document.createElement("button");
-                    deleteButton.className = "delete-one";
-                    deleteButton.textContent = "X";
-                    deleteButton.onclick = async (event) => {
-                        event.stopPropagation();
-                        await deleteScore(entry.id);
-                    };
-                    actions.appendChild(deleteButton);
-                }
-
                 main.appendChild(info);
-                main.appendChild(actions);
                 card.appendChild(main);
                 list.appendChild(card);
             });
-
-            renderScoreSubmission();
         }
 
         async function runLeaderboardRefresh() {
@@ -373,135 +252,6 @@
             renderLeaderboard();
         }
 
-        async function saveOwnScore() {
-            if (savingOwnScore) {
-                return;
-            }
-
-            if (typeof isLoggedIn !== "function" || !isLoggedIn()) {
-                setScoreStatus("Log in first to save a score.", "error");
-                if (typeof openLoginPopup === "function") {
-                    openLoginPopup();
-                }
-                return;
-            }
-
-            const supabaseClient = getLeaderboardSupabaseClient();
-            if (!supabaseClient) {
-                setScoreStatus("Supabase is not available on this page.", "error");
-                return;
-            }
-
-            const user = getLeaderboardUser();
-            if (!user || !user.id) {
-                setScoreStatus("Your account session is missing a user id.", "error");
-                return;
-            }
-
-            const rawScore = scoreInputValue();
-            if (!rawScore) {
-                setScoreStatus("Enter a score before saving it.", "error");
-                return;
-            }
-
-            const numericScore = Number(rawScore);
-            if (!Number.isFinite(numericScore) || numericScore < 0) {
-                setScoreStatus("Score must be a non-negative number.", "error");
-                return;
-            }
-
-            savingOwnScore = true;
-            renderScoreSubmission();
-            setScoreStatus("Saving your score...");
-
-            try {
-                if (typeof ensureOwnProfile === "function") {
-                    await ensureOwnProfile({ user });
-                }
-
-                const payload = {
-                    user_id: user.id,
-                    score: Math.max(0, Math.floor(numericScore))
-                };
-
-                const { error } = await supabaseClient
-                    .from(LEADERBOARD_TABLE)
-                    .upsert(payload, {
-                        onConflict: "user_id"
-                    })
-                    .select("id, user_id, score, created_at")
-                    .single();
-
-                if (error) {
-                    throw error;
-                }
-
-                scoreInput.value = String(payload.score);
-                scoreInput.dataset.dirty = "false";
-                setScoreStatus("Score saved to the leaderboard.", "success");
-                scheduleLeaderboardRefresh();
-            } catch (error) {
-                console.error("Failed to save leaderboard score:", error);
-                setScoreStatus(error && error.message ? error.message : "Could not save your score right now.", "error");
-            } finally {
-                savingOwnScore = false;
-                renderScoreSubmission();
-            }
-        }
-
-        async function deleteScore(rowId) {
-            if (!leaderboardAdminEnabled() || !rowId) return;
-
-            const supabaseClient = getLeaderboardSupabaseClient();
-            if (!supabaseClient) {
-                return;
-            }
-
-            const { error } = await supabaseClient
-                .from(LEADERBOARD_TABLE)
-                .delete()
-                .eq("id", rowId);
-
-            if (error) {
-                console.error("Failed to delete leaderboard row:", error);
-                return;
-            }
-
-            scheduleLeaderboardRefresh();
-        }
-
-        async function deleteAll() {
-            if (!leaderboardAdminEnabled()) return;
-            if (!confirm("Delete every leaderboard entry?")) return;
-
-            const rows = getDisplayLeaderboardRows();
-            const rowIds = rows
-                .map((row) => normalizeLeaderboardValue(row && row.id))
-                .filter(Boolean);
-
-            if (rowIds.length === 0) {
-                scheduleLeaderboardRefresh();
-                return;
-            }
-
-            const supabaseClient = getLeaderboardSupabaseClient();
-            if (!supabaseClient) {
-                return;
-            }
-
-            const { error } = await supabaseClient
-                .from(LEADERBOARD_TABLE)
-                .delete()
-                .in("id", rowIds);
-
-            if (error) {
-                console.error("Failed to delete leaderboard rows:", error);
-                return;
-            }
-
-            scheduleLeaderboardRefresh();
-        }
-
         async function updatePageForAuth() {
             syncLeaderboardRealtimeSubscription();
             renderLeaderboard();
@@ -509,12 +259,6 @@
         }
 
         document.addEventListener("DOMContentLoaded", () => {
-            if (scoreInput) {
-                scoreInput.addEventListener("input", () => {
-                    scoreInput.dataset.dirty = "true";
-                });
-            }
-
             window.addEventListener("focus", () => {
                 scheduleLeaderboardRefresh();
             });
@@ -531,7 +275,6 @@
                 }
             });
 
-            renderScoreSubmission();
             syncLeaderboardRealtimeSubscription();
             scheduleLeaderboardRefresh();
         });
