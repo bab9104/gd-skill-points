@@ -105,32 +105,6 @@
             );
         }
 
-        function normalizeLeaderboardRow(row, usernameByUserId = new Map()) {
-            const points = Math.floor(Number(
-                row && (row.score ?? row.points ?? row.total_points ?? 0)
-            ) || 0));
-            const userId = String(row && (row.user_id ?? row.userId ?? "") || "").trim();
-            const username = String(
-                usernameByUserId.get(userId)
-                || (row && (
-                    row.username
-                    ?? row.name
-                    ?? row.player_name
-                    ?? row.playerName
-                    ?? row.display_name
-                    ?? row.displayName
-                ))
-                || userId
-                || "Unknown Player"
-            ).trim() || "Unknown Player";
-
-            return {
-                userId,
-                username,
-                points
-            };
-        }
-
         async function loadLeaderboardRows() {
             const supabaseClient = getLeaderboardClient();
             if (!supabaseClient) {
@@ -139,30 +113,27 @@
                 return;
             }
 
-            const scoresRequest = supabaseClient
+            const { data, error } = await supabaseClient
                 .from(LEADERBOARD_TABLE)
-                .select("user_id, score");
-            const profilesRequest = supabaseClient
-                .from(PROFILES_TABLE)
-                .select("id, username");
+                .select("user_id, score")
+                .order("score", { ascending: false });
 
-            const [{ data: scores, error: scoresError }, { data: profiles, error: profilesError }] = await Promise.all([
-                scoresRequest,
-                profilesRequest
-            ]);
-
-            if (scoresError) {
-                console.error("Failed to load leaderboard scores:", scoresError);
+            if (error) {
+                console.error("Leaderboard error:", error);
                 leaderboardRows = [];
-                leaderboardError = "Failed to load leaderboard.";
+                leaderboardError = "Could not load scores right now.";
                 return;
             }
 
+            const { data: profiles, error: profilesError } = await supabaseClient
+                .from(PROFILES_TABLE)
+                .select("id, username");
+
             if (profilesError) {
-                console.warn("Failed to load leaderboard usernames from profiles:", profilesError);
+                console.warn("Profiles lookup error:", profilesError);
             }
 
-            const usernameByUserId = new Map();
+            const usernameMap = {};
             if (Array.isArray(profiles)) {
                 profiles.forEach((profile) => {
                     const profileId = String(profile && profile.id || "").trim();
@@ -170,15 +141,19 @@
                         return;
                     }
 
-                    usernameByUserId.set(profileId, String(profile && profile.username || "").trim() || profileId);
+                    usernameMap[profileId] = String(profile && profile.username || "").trim() || profileId;
                 });
             }
 
-            leaderboardRows = Array.isArray(scores)
-                ? scores
-                    .map((row) => normalizeLeaderboardRow(row, usernameByUserId))
-                    .filter((entry) => entry.userId)
-                    .sort((a, b) => b.points - a.points)
+            leaderboardRows = Array.isArray(data)
+                ? data.map((row) => {
+                    const userId = String(row && row.user_id || "").trim();
+                    return {
+                        userId,
+                        username: usernameMap[userId] || userId || "Unknown Player",
+                        points: Math.floor(Number(row && row.score) || 0)
+                    };
+                }).filter((entry) => entry.userId)
                 : [];
             leaderboardError = "";
         }
