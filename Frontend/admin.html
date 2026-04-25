@@ -101,7 +101,6 @@
     <script>
         const LEADERBOARD_TABLE = "leaderboard";
         const PROFILES_TABLE = "profiles";
-        const ADMIN_DELETE_ACCOUNT_RPC = "admin_delete_account";
         const LEADERBOARD_REFRESH_KEY = "gdLeaderboardRefresh";
         const queueList = document.getElementById("queueList");
         const queuePanel = document.getElementById("queuePanel");
@@ -124,7 +123,7 @@
         let adminRealtimeChannel = null;
         let selectedAccountId = "";
         let savingAccountScoreForUserId = "";
-        let deletingAccountUserId = "";
+        let deletingScoreForUserId = "";
         let accountEditorMessage = "";
         let accountEditorTone = "";
 
@@ -365,7 +364,7 @@
                     : null;
                 const isOpen = selectedAccountId === profileId;
                 const isSavingThisProfile = savingAccountScoreForUserId === profileId;
-                const isDeletingThisProfile = deletingAccountUserId === profileId;
+                const isDeletingThisProfile = deletingScoreForUserId === profileId;
 
                 const card = document.createElement("div");
                 const head = document.createElement("div");
@@ -414,11 +413,11 @@
                 };
 
                 deleteButton.className = "action-button delete-account-button";
-                deleteButton.textContent = isDeletingThisProfile ? "Deleting..." : "Delete Account";
+                deleteButton.textContent = isDeletingThisProfile ? "Deleting..." : "Delete Score";
                 deleteButton.disabled = isDeletingThisProfile || isSavingThisProfile;
                 deleteButton.onclick = async (event) => {
                     event.stopPropagation();
-                    await deleteAccount(profileId);
+                    await deleteScoreFromProfile(profileId);
                 };
 
                 if (isOpen && accountEditorMessage) {
@@ -794,7 +793,7 @@
             savePendingScores(remainingScores);
         }
 
-        async function deleteAccount(profileId) {
+        async function deleteScoreFromProfile(profileId) {
             if (!isAdminLoggedIn()) {
                 return;
             }
@@ -810,45 +809,42 @@
                 return;
             }
 
-            if (deletingAccountUserId === normalizedProfileId) {
+            if (deletingScoreForUserId === normalizedProfileId) {
                 return;
             }
 
-            if (!confirm(`Delete ${username}'s account, profile, leaderboard row, and pending scores?`)) {
+            if (!confirm(`Delete ${username}'s leaderboard score?`)) {
                 return;
             }
 
-            deletingAccountUserId = normalizedProfileId;
+            deletingScoreForUserId = normalizedProfileId;
             selectedAccountId = normalizedProfileId;
-            setAccountEditorMessage("Deleting account...", "");
+            setAccountEditorMessage("Deleting leaderboard score...", "");
             renderAccounts();
 
             try {
-                const { error } = await supabaseClient.rpc(ADMIN_DELETE_ACCOUNT_RPC, {
-                    target_user_id: normalizedProfileId
-                });
+                const { error } = await supabaseClient
+                    .from(LEADERBOARD_TABLE)
+                    .delete()
+                    .eq("user_id", normalizedProfileId);
 
                 if (error) {
                     throw error;
                 }
 
-                removePendingScoresForProfile(profile);
                 accountScoresByUserId.delete(normalizedProfileId);
-                accountProfiles = accountProfiles.filter((entry) => normalizeTextValue(entry && entry.id) !== normalizedProfileId);
-                selectedAccountId = "";
-                setAccountEditorMessage("", "");
+                setAccountEditorMessage("Score deleted from the leaderboard.", "success");
                 broadcastLeaderboardRefresh();
-                await loadAccountsData();
-                renderQueue();
+                await loadAccountsData({ preserveEditorMessage: true });
             } catch (error) {
-                console.error("Failed to delete account:", error);
+                console.error("Failed to delete leaderboard score:", error);
                 setAccountEditorMessage(
-                    error && error.message ? error.message : "Could not delete that account right now.",
+                    error && error.message ? error.message : "Could not delete that score right now.",
                     "error"
                 );
                 renderAccounts();
             } finally {
-                deletingAccountUserId = "";
+                deletingScoreForUserId = "";
                 renderAccounts();
             }
         }

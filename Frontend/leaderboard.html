@@ -33,13 +33,13 @@
     <script>
         const LEADERBOARD_TABLE = "leaderboard";
         const PROFILES_TABLE = "profiles";
-        const LEADERBOARD_REFRESH_KEY = "gdLeaderboardRefresh";
         let list = null;
         let deleteAllButton = null;
         let leaderboardRows = [];
         let leaderboardError = "";
         let deletingAllScores = false;
         let deletingUserId = "";
+        let leaderboardRealtimeChannel = null;
 
         function getLeaderboardClient() {
             if (typeof getSupabaseClient === "function") {
@@ -47,6 +47,49 @@
             }
 
             return window.supabaseClient || null;
+        }
+
+        function unsubscribeLeaderboardRealtime() {
+            const supabaseClient = getLeaderboardClient();
+            if (supabaseClient && leaderboardRealtimeChannel && typeof supabaseClient.removeChannel === "function") {
+                supabaseClient.removeChannel(leaderboardRealtimeChannel);
+            }
+
+            leaderboardRealtimeChannel = null;
+        }
+
+        function syncLeaderboardRealtimeSubscription() {
+            const supabaseClient = getLeaderboardClient();
+            if (!supabaseClient) {
+                unsubscribeLeaderboardRealtime();
+                return;
+            }
+
+            if (leaderboardRealtimeChannel) {
+                return;
+            }
+
+            leaderboardRealtimeChannel = supabaseClient
+                .channel("gd-leaderboard-live")
+                .on("postgres_changes", {
+                    event: "*",
+                    schema: "public",
+                    table: LEADERBOARD_TABLE
+                }, () => {
+                    refreshLeaderboard();
+                })
+                .on("postgres_changes", {
+                    event: "*",
+                    schema: "public",
+                    table: PROFILES_TABLE
+                }, () => {
+                    refreshLeaderboard();
+                })
+                .subscribe((status) => {
+                    if (status === "CHANNEL_ERROR") {
+                        console.warn("Supabase realtime subscription failed for leaderboard.");
+                    }
+                });
         }
 
         function leaderboardAdminEnabled() {
@@ -282,19 +325,15 @@
         }
 
         async function updatePageForAuth() {
+            syncLeaderboardRealtimeSubscription();
             await refreshLeaderboard();
         }
 
         document.addEventListener("DOMContentLoaded", () => {
             list = document.getElementById("list");
             deleteAllButton = document.getElementById("deleteAllButton");
+            syncLeaderboardRealtimeSubscription();
             refreshLeaderboard();
-        });
-
-        window.addEventListener("storage", (event) => {
-            if (event.key === LEADERBOARD_REFRESH_KEY) {
-                refreshLeaderboard();
-            }
         });
 
         window.addEventListener("focus", () => {
